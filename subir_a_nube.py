@@ -32,7 +32,9 @@ from datetime import datetime
 import pandas as pd
 
 import config as C
-from fuente_datos import TABLAS_NUBE
+# Tablas que se suben (las mismas que lee el dashboard; ver fuente_datos.py)
+TABLAS_NUBE = ["agrocacay_vigente", "kahai_vigente", "agrocacay_costo_unitario",
+               "historial_cargas", "calculos_cu"]
 
 ARCHIVO_SECRETS = os.path.join(C.CARPETA_APP, ".streamlit", "secrets.toml")
 FILAS_POR_ENVIO = 400      # filas por cada envío a Turso
@@ -108,19 +110,33 @@ def valor(v):
 
 def subir_filas(con, tabla, df):
     columnas = list(df.columns)
-    sql = (f'INSERT INTO "{tabla}" (' + ", ".join(f'"{c}"' for c in columnas) + ") VALUES ("
-           + ", ".join(["?"] * len(columnas)) + ")")
+    # Varias filas en UNA sola instrucción (INSERT ... VALUES (...), (...), ...): así cada
+    # envío a Turso lleva cientos de filas. (executemany mandaba una fila por envío: muy lento.)
+    por_envio = max(1, min(FILAS_POR_ENVIO, 30000 // len(columnas)))
+    grupo = "(" + ", ".join(["?"] * len(columnas)) + ")"
+    inicio_sql = f'INSERT INTO "{tabla}" (' + ", ".join(f'"{c}"' for c in columnas) + ") VALUES "
     filas = [tuple(valor(v) for v in fila) for fila in df.itertuples(index=False, name=None)]
-    for i in range(0, len(filas), FILAS_POR_ENVIO):
-        lote = filas[i:i + FILAS_POR_ENVIO]
+    for i in range(0, len(filas), por_envio):
+        lote = filas[i:i + por_envio]
+        sql = inicio_sql + ", ".join([grupo] * len(lote))
+        params = [v for fila in lote for v in fila]
 
-        def f(lote=lote):
-            con.executemany(sql, lote)
+        def f(sql=sql, params=params):
+            con.execute(sql, params)
             con.commit()
         reintentar(f, f"subir filas de {tabla}")
-        print(f"    {tabla}: {min(i + FILAS_POR_ENVIO, len(filas)):,} / {len(filas):,} filas", end="\r")
+        print(f"    {tabla}: {min(i + por_envio, len(filas)):,} / {len(filas):,} filas", end="\r")
     if filas:
         print()
+    quitar_repetidas(con, tabla)
+
+
+def quitar_repetidas(con, tabla):
+    """Si un envío se repitió por un corte de internet, quedan filas dobles en la nube:
+    cada firma debe estar UNA sola vez."""
+    reintentar(lambda: (con.execute(f'DELETE FROM "{tabla}" WHERE rowid NOT IN '
+                                    f'(SELECT MIN(rowid) FROM "{tabla}" GROUP BY "_firma")'), con.commit()),
+               f"revisar filas dobles de {tabla}")
 
 
 def crear_tabla(con, tabla, df):
@@ -167,6 +183,7 @@ def sincronizar(con_local, con, tabla, completo=False):
     borrar = list(nube - local)
     agregar = df[~df["_firma"].isin(nube)]
     if not borrar and agregar.empty:
+        quitar_repetidas(con, tabla)
         print(f"  {tabla}: sin cambios.")
         return 0, 0
     print(f"  {tabla}: {len(agregar):,} filas para agregar, {len(borrar):,} para quitar...")
