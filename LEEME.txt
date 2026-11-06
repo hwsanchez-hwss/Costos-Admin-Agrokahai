@@ -1,0 +1,93 @@
+APP DE COSTOS ADMINISTRATIVOS — AGROCACAY y KAHAI
+==================================================
+
+Idea central
+------------
+- Los dos Excel (CONSOLIDADO_AGROCACAY.xlsx y CONSOLIDADO_KAHAI.xlsx) siguen
+  siendo la base oficial. Administración los sigue trabajando igual,
+  con sus ajustes manuales.
+- La app SOLO LEE esos Excel. Nunca los modifica.
+- AGROCACAY y KAHAI se manejan por separado: tablas propias, revisión
+  propia y aprobación propia.
+
+Archivos de esta carpeta
+------------------------
+  config.py                  Rutas, nombres de hojas/columnas y umbrales de alertas.
+  actualizar_desde_excel.py  Lee los Excel, compara contra lo aprobado y genera
+                             el reporte de revisión.
+  aprobar_carga.py           Aprueba o rechaza lo leído (por empresa).
+  motor_costo_unitario.py    Costo unitario de AGROCACAY (misma lógica de Ana_Costos_AGRO.xlsx).
+  dashboard.py               Dashboard mensual (muestra solo lo APROBADO).
+  subir_a_nube.py            Sube lo APROBADO a la base de la nube (solo lo que cambió).
+  fuente_datos.py            El dashboard lee de base_admin.db (PC) o de la nube.
+  acceso.py                  En la nube: entrar con Google, solo correos autorizados.
+  base_admin.db              (se crea sola) Base local con lo aprobado y el historial.
+  reportes_revision\         (se crea sola) Un Excel de revisión por cada lectura.
+
+Primera vez
+-----------
+  1. Abrir una terminal en esta carpeta.
+  2. python actualizar_desde_excel.py
+     -> Hace la CARGA INICIAL de las dos empresas. El histórico se acepta
+        tal como viene (no se quita nada).
+
+Cada vez que administración cierre o ajuste un mes
+--------------------------------------------------
+  1. Guardar el Excel desde Excel (para que AÑO y MES queden calculados).
+  2. python actualizar_desde_excel.py          (o solo una: ... AGROCACAY / ... KAHAI)
+  3. Abrir el reporte en reportes_revision\ y revisar la hoja "Alertas":
+       1. Fila repetida             -> filas idénticas en el Excel
+       2. Factura en otro mes       -> mismo tercero, documento y valor ya cargado en otro mes
+       3. Dato vacío o inválido     -> falta CECO, rubro, valor, año o mes
+       4. Nombre nuevo              -> CECO/rubro/detalle que no existía (o variante con
+                                        otra tilde/mayúscula de uno que ya existe)
+       5. Valor fuera de lo normal  -> rubro del mes > 2 veces su promedio de 12 meses
+       6. Cambio en mes anterior    -> ajuste manual a un mes ya reportado (informativo)
+  4. Si hay algo que corregir: corregirlo EN EL EXCEL y volver al paso 2.
+  5. Si todo está bien:
+       python aprobar_carga.py AGROCACAY aprobar "Nombre" "comentario opcional"
+       python aprobar_carga.py KAHAI aprobar "Nombre"
+     Para descartar la lectura:
+       python aprobar_carga.py KAHAI rechazar "Nombre" "motivo"
+
+Costo unitario (parte agrícola: AGROCACAY)
+------------------------------------------
+  - Las referencias se siguen manteniendo en Graficas\Ana_Costos_AGRO.xlsx
+    (hojas ⚙ CONFIG, PXN, CENSO, SYRS y ARB_TOTAL). El motor solo las lee.
+  - Se recalcula solo al aprobar una carga de AGROCACAY.
+  - Si se actualizan las hojas de referencia (cosecha nueva, censo nuevo...):
+       python motor_costo_unitario.py
+    (el dashboard avisa cuando el Excel de referencias es más nuevo que el cálculo).
+
+Ver el dashboard
+----------------
+  python -m streamlit run dashboard.py
+  -> Se abre en el navegador. Para cerrarlo: Ctrl+C en la ventana negra.
+  Pestañas: Resumen · Tabla mensual · Costo unitario · Gerentes · Intercompañía · Movimientos · Cargas.
+  Por defecto muestra Operativo + Intercompañía (Financiero e Inversión se
+  activan en la barra lateral).
+
+La app en la nube (para las personas autorizadas)
+-------------------------------------------------
+  - Es el MISMO dashboard, publicado en Streamlit Cloud. Se entra con
+    "Iniciar sesión con Google" y solo pasan los correos de la lista ACCESO
+    (está en los Secretos de Streamlit Cloud, no en el código).
+  - Muestra solo lo APROBADO. Se actualiza solo al aprobar una carga y al
+    correr motor_costo_unitario.py. A mano:  python subir_a_nube.py
+  - Para dar o quitar acceso a alguien: Streamlit Cloud -> la app -> Settings ->
+    Secrets -> editar la lista ACCESO -> Save.
+  - El código está en GitHub (repositorio público Costos-Admin-Agrokahai) pero
+    SIN datos ni claves: los datos están en la base privada "costos-admin" de Turso
+    y la clave de esa base solo está en .streamlit\secrets.toml (en este PC)
+    y en los Secretos de Streamlit Cloud.
+
+Lo único que se pide al equipo administrativo
+---------------------------------------------
+  - No cambiar el nombre de las hojas (CONSOLIDADO / CONSOLIDADO_KAHAI)
+    ni de las columnas. Agregar columnas nuevas al final sí se puede.
+  - Guardar el archivo desde Excel antes de actualizar.
+
+Requisitos
+----------
+  Python con pandas, openpyxl, streamlit y plotly (los mismos de la app de campo):
+  python -m pip install pandas openpyxl streamlit plotly

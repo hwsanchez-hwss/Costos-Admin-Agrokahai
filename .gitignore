@@ -1,0 +1,12 @@
+# NUNCA subir datos ni claves a este repositorio (es público)
+*.db
+*.db-*
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+.streamlit/secrets.toml
+reportes_revision/
+datos_prueba/
+prueba*/
+__pycache__/
