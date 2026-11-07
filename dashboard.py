@@ -63,8 +63,20 @@ st.markdown(f"""
                 font-weight:600; background:rgba(255,255,255,0.16); margin-right:6px; }}
 
   /* Barra de filtros */
-  .st-key-barra_filtros {{ margin-top:0.7rem; background:#F6F8F5; border:1px solid #E1E8DF; border-radius:14px;
-                           padding:0.55rem 1rem 0.2rem 1rem; }}
+  .st-key-barra_filtros {{ margin-top:0.8rem; }}
+  .st-key-bloque_periodo, .st-key-bloque_alcance {{ background:#FFFFFF; border:1px solid #E1E8DF;
+        border-radius:14px; padding:0.75rem 1.1rem 0.35rem 1.1rem; box-shadow:0 1px 3px rgba(16,24,40,0.06);
+        height:100%; }}
+  .st-key-bloque_periodo {{ border-top:4px solid {VERDE}; }}
+  .st-key-bloque_alcance {{ border-top:4px solid var(--acento); }}
+  .bt {{ display:flex; align-items:center; gap:0.6rem; margin-bottom:0.15rem; }}
+  .bi {{ display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px;
+         border-radius:10px; background:#EEF4EE; font-size:1.05rem; }}
+  .bt1 {{ font-weight:700; font-size:1rem; color:#111827; line-height:1.1; }}
+  .bt2 {{ font-size:0.78rem; color:#6B7280; }}
+  .frase {{ margin:0.2rem 0 0.6rem 0; padding:0.45rem 0.8rem; border-radius:10px; background:#F3F7F3;
+             font-size:0.85rem; color:#374151; }}
+  .st-key-btn_restablecer button p {{ font-size:0.82rem; color:#5B6B5E; }}
   .st-key-barra_filtros label p {{ font-size:0.74rem !important; font-weight:700 !important;
                                    text-transform:uppercase; letter-spacing:0.6px; color:#5B6B5E !important; }}
   .st-key-barra_filtros [data-testid="stButtonGroup"] button {{ border-radius:999px; }}
@@ -263,32 +275,67 @@ def boton_unico(lugar, etiqueta_f, opciones, defecto, clave, ayuda=None, formato
 # El encabezado se dibuja ARRIBA de los filtros, pero se llena después (necesita el periodo elegido)
 encabezado = st.container()
 
-# ---- Barra de filtros (arriba, como en la app de campo) ----
+# ---- Filtros arriba, en dos bloques: PERIODO (cuándo) y ALCANCE (qué se mira) ----
+def restablecer_filtros():
+    """Vuelve todos los filtros a como abre la app."""
+    for k in [k for k in st.session_state if str(k).startswith("f_")]:
+        del st.session_state[k]
+
+
+def titulo_bloque(icono, titulo, ayuda):
+    st.markdown(f'<div class="bt"><span class="bi">{icono}</span><div><div class="bt1">{titulo}</div>'
+                f'<div class="bt2">{ayuda}</div></div></div>', unsafe_allow_html=True)
+
+
 with st.container(key="barra_filtros"):
-    f1, f2, g2 = st.columns([1.25, 3.3, 1.05], gap="medium")
-    vista = boton_unico(f1, "Empresa", ["AGROCACAY", "KAHAI", GRUPO], "AGROCACAY", "f_empresa",
-                        "Las empresas se ven por separado. 'Grupo' suma las dos.", segmentado=True)
+    col_periodo, col_alcance = st.columns([1.55, 1], gap="medium")
+    bloque_periodo = col_periodo.container(key="bloque_periodo")
+    bloque_alcance = col_alcance.container(key="bloque_alcance")
+
+    # ALCANCE: empresa, tipo y naturaleza (va primero en el código: los años dependen de la empresa)
+    with bloque_alcance:
+        t1, t2 = st.columns([3, 1.3], vertical_alignment="center")
+        with t1:
+            titulo_bloque("🏢", "Qué se mira", "Empresa y clase de gasto")
+        t2.button("↺ Restablecer", on_click=restablecer_filtros, type="tertiary", key="btn_restablecer",
+                  help="Vuelve todos los filtros a como abre la app")
+        a1, a2 = st.columns([1.6, 1], gap="small")
+        vista = boton_unico(a1, "Empresa", ["AGROCACAY", "KAHAI", GRUPO], "AGROCACAY", "f_empresa",
+                            "Las empresas se ven por separado. 'Grupo' suma las dos.", segmentado=True)
+        tipos = a2.pills("Tipo de gasto", ["Nómina", "Terceros"], selection_mode="multi",
+                         default=["Nómina", "Terceros"], key="f_tipo",
+                         help="Nómina = empleados de la empresa. Terceros = todo lo demás: proveedores, "
+                              "contratistas, servicios, impuestos, bancos. Los dos encendidos = gasto total.")
+        naturalezas = st.pills(
+            "Naturaleza del gasto", ["Operativo", "Intercompañía", "Financiero", "Inversión"],
+            selection_mode="multi", default=C.NATURALEZAS_POR_DEFECTO, key="f_naturaleza",
+            help="Toque para activar o quitar. Financiero = CECO FINANCIERO (intereses, créditos). "
+                 "Inversión = CECO ACTIVOS. Intercompañía = compras a la empresa hermana.")
     empresas_vista = list(C.EMPRESAS) if vista == GRUPO else [vista]
     base_empresa = datos[datos["empresa"].isin(empresas_vista)]
     periodos = sorted(base_empresa["periodo"].unique())
 
-    anios = sorted({p // 100 for p in periodos})
-    anio = boton_unico(f2, "Año", anios, anios[-1], "f_anio")
-    meses_del_anio = [p % 100 for p in periodos if p // 100 == anio]
-    AÑO_COMPLETO = "Año completo"
-    opciones_mes = [AÑO_COMPLETO] + [NOMBRE_MES[m] for m in meses_del_anio]
-    # Año en curso: abre en el último mes. Años anteriores: abre en el año completo.
-    defecto_mes = NOMBRE_MES[meses_del_anio[-1]] if anio == anios[-1] else AÑO_COMPLETO
-    f3, g1 = st.columns([3.3, 2.3], gap="medium")
-    mes_txt = boton_unico(f3, "Mes", opciones_mes, defecto_mes, f"f_mes_{anio}")
-
-    naturalezas = g1.pills(
-        "Naturaleza del gasto", ["Operativo", "Intercompañía", "Financiero", "Inversión"],
-        selection_mode="multi", default=C.NATURALEZAS_POR_DEFECTO, key="f_naturaleza",
-        help="Toque para activar o quitar. Financiero = CECO FINANCIERO (intereses, créditos). "
-             "Inversión = CECO ACTIVOS. Intercompañía = compras a la empresa hermana.")
-    tipos = g2.pills("Tipo de gasto", ["Nómina", "Terceros"], selection_mode="multi",
-                     default=["Nómina", "Terceros"], key="f_tipo")
+    # PERIODO: año y mes
+    with bloque_periodo:
+        titulo_bloque("📅", "Periodo", "Elija el año y luego un mes, o el año completo")
+        anios = sorted({p // 100 for p in periodos})
+        anio = boton_unico(st, "Año", anios, anios[-1], "f_anio")
+        meses_del_anio = [p % 100 for p in periodos if p // 100 == anio]
+        AÑO_COMPLETO = "Año completo"
+        opciones_mes = [AÑO_COMPLETO] + [NOMBRE_MES[m] for m in meses_del_anio]
+        # Año en curso: abre en el último mes. Años anteriores: abre en el año completo.
+        defecto_mes = NOMBRE_MES[meses_del_anio[-1]] if anio == anios[-1] else AÑO_COMPLETO
+        mes_txt = boton_unico(st, "Mes", opciones_mes, defecto_mes, f"f_mes_{anio}")
+        # Frase que explica contra qué se compara lo elegido (para leer las tarjetas sin dudas)
+        if mes_txt == AÑO_COMPLETO:
+            ultimo_m = NOMBRE_MES[meses_del_anio[-1]]
+            hasta = "" if meses_del_anio[-1] == 12 else f" (Ene–{ultimo_m})"
+            frase = f"Año {anio}{hasta} · se compara con los mismos meses de {anio - 1}"
+        else:
+            n_m = [k for k, v in NOMBRE_MES.items() if v == mes_txt][0]
+            previo = f"{NOMBRE_MES[n_m - 1]}-{anio}" if n_m > 1 else f"Dic-{anio - 1}"
+            frase = f"{mes_txt}-{anio} · se compara con {previo} (mes anterior) y {mes_txt}-{anio - 1} (año anterior)"
+        st.markdown(f'<div class="frase">📌 {frase}</div>', unsafe_allow_html=True)
 
 df = base_empresa[base_empresa["naturaleza"].isin(naturalezas) & base_empresa["tipo"].isin(tipos)]
 
