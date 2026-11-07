@@ -74,6 +74,22 @@ st.markdown(f"""
   .st-key-barra_filtros [data-testid="stButtonGroup"] button[aria-checked="true"] p,
   .st-key-barra_filtros [data-testid="stButtonGroup"] button[kind$="Active"] p {{ color:#fff !important; }}
 
+  /* Empresa: AGROCACAY y KAHAI una debajo de la otra; Grupo en su propia columna (alto completo) */
+  .st-key-f_empresa [role="radiogroup"] {{ display:grid !important; grid-template-columns:auto auto;
+        grid-template-rows:auto auto; gap:6px 8px; overflow:visible !important; width:fit-content; }}
+  .st-key-f_empresa [role="radiogroup"] > button {{ border-radius:10px !important; width:100%;
+        border:1px solid #CBD5CC !important; margin:0 !important; }}
+  .st-key-f_empresa [role="radiogroup"] > button:nth-child(1) {{ grid-column:1; grid-row:1; }}
+  .st-key-f_empresa [role="radiogroup"] > button:nth-child(2) {{ grid-column:1; grid-row:2; }}
+  .st-key-f_empresa [role="radiogroup"] > button:nth-child(3) {{ grid-column:2; grid-row:1 / span 2; height:auto; }}
+  .st-key-f_empresa [role="radiogroup"] > button[data-selected="true"] {{
+        background:{VERDE} !important; border-color:{VERDE} !important; }}
+  .st-key-f_empresa [role="radiogroup"] > button[data-selected="true"] p {{ color:#fff !important; font-weight:600; }}
+  /* Tipo de gasto: Nómina y Terceros uno debajo del otro */
+  .st-key-f_tipo [role="toolbar"] {{ display:grid !important; grid-template-columns:7.5rem; gap:6px;
+        width:fit-content; overflow:visible !important; }}
+  .st-key-f_tipo [role="toolbar"] > button {{ width:100%; margin:0 !important; }}
+
   /* Tarjetas de indicadores */
   [data-testid="stMetric"] {{ background:#fff; border:1px solid #E5E7EB; border-left:5px solid var(--acento);
                               border-radius:12px; padding:0.8rem 1rem; box-shadow:0 1px 2px rgba(16,24,40,0.05); }}
