@@ -29,12 +29,64 @@ import plotly.graph_objects as go
 import config as C
 import fuente_datos as F
 
-st.set_page_config(page_title="Costos AGROCACAY · KAHAI", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Costos AGROCACAY · KAHAI", page_icon="📊", layout="wide",
+                   initial_sidebar_state="collapsed")
 
 # En la nube se exige "Iniciar sesión con Google" (solo correos autorizados); en el PC no.
+USUARIO = None
 if F.en_la_nube():
     from acceso import exigir_acceso
-    exigir_acceso()
+    USUARIO = exigir_acceso()
+
+# ---------------------------------------------------------------
+# ESTILO EJECUTIVO (encabezado, barra de filtros arriba, tarjetas de indicadores)
+# ---------------------------------------------------------------
+VERDE = "#1B5E20"          # color de marca (el mismo de la app de campo)
+st.markdown(f"""
+<style>
+  /* Sin barra lateral: los filtros van arriba */
+  [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {{ display: none; }}
+  .block-container {{ padding-top: 1.2rem; padding-bottom: 3rem; max-width: 1500px; }}
+
+  /* Encabezado */
+  .enc {{ display:flex; align-items:center; gap:1rem; padding:0.9rem 1.3rem; border-radius:14px;
+          background: linear-gradient(120deg, #0F3D1F 0%, {VERDE} 70%, #2E7D32 100%); color:#fff; }}
+  .enc img {{ height:52px; background:#fff; border-radius:10px; padding:4px 8px; }}
+  .enc .tit {{ font-size:1.55rem; font-weight:700; line-height:1.15; letter-spacing:0.2px; }}
+  .enc .sub {{ font-size:0.92rem; opacity:0.88; margin-top:2px; }}
+  @media (max-width: 640px) {{
+    .enc {{ flex-direction:column; align-items:flex-start; gap:0.5rem; }}
+    .enc img {{ height:38px; }}
+    .enc .tit {{ font-size:1.2rem; }}
+  }}
+  .enc .chip {{ display:inline-block; padding:2px 10px; border-radius:999px; font-size:0.78rem;
+                font-weight:600; background:rgba(255,255,255,0.16); margin-right:6px; }}
+
+  /* Barra de filtros */
+  .st-key-barra_filtros {{ margin-top:0.7rem; background:#F6F8F5; border:1px solid #E1E8DF; border-radius:14px;
+                           padding:0.55rem 1rem 0.2rem 1rem; }}
+  .st-key-barra_filtros label p {{ font-size:0.74rem !important; font-weight:700 !important;
+                                   text-transform:uppercase; letter-spacing:0.6px; color:#5B6B5E !important; }}
+  .st-key-barra_filtros [data-testid="stButtonGroup"] button {{ border-radius:999px; }}
+  .st-key-barra_filtros [data-testid="stButtonGroup"] button[aria-checked="true"],
+  .st-key-barra_filtros [data-testid="stButtonGroup"] button[kind$="Active"] {{
+        background:{VERDE} !important; border-color:{VERDE} !important; color:#fff !important; }}
+  .st-key-barra_filtros [data-testid="stButtonGroup"] button[aria-checked="true"] p,
+  .st-key-barra_filtros [data-testid="stButtonGroup"] button[kind$="Active"] p {{ color:#fff !important; }}
+
+  /* Tarjetas de indicadores */
+  [data-testid="stMetric"] {{ background:#fff; border:1px solid #E5E7EB; border-left:5px solid var(--acento);
+                              border-radius:12px; padding:0.8rem 1rem; box-shadow:0 1px 2px rgba(16,24,40,0.05); }}
+  [data-testid="stMetricLabel"] p {{ font-size:0.8rem !important; color:#5B6470 !important; font-weight:600; }}
+  [data-testid="stMetricValue"] {{ font-size:1.65rem !important; font-weight:700; color:#111827; }}
+
+  /* Pestañas */
+  .stTabs [data-baseweb="tab-list"] {{ gap:0.3rem; border-bottom:1px solid #E5E7EB; }}
+  .stTabs [data-baseweb="tab"] {{ padding:0.5rem 0.9rem; font-weight:600; }}
+  .stTabs [aria-selected="true"] {{ color:{VERDE} !important; }}
+  .stTabs [data-baseweb="tab-highlight"] {{ background-color:{VERDE} !important; }}
+</style>
+""", unsafe_allow_html=True)
 
 NOMBRE_MES = {1: "Ene", 2: "Feb", 3: "Mar", 4: "Abr", 5: "May", 6: "Jun",
               7: "Jul", 8: "Ago", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dic"}
@@ -184,47 +236,58 @@ except TypeError:   # versiones de Streamlit más antiguas
                      height=0)
 
 
-def boton_unico(lugar, etiqueta_f, opciones, defecto, clave, ayuda=None, formato=None):
+def boton_unico(lugar, etiqueta_f, opciones, defecto, clave, ayuda=None, formato=None, segmentado=False):
     """Botones de una sola selección. Si el usuario quita la selección, vuelve al valor por defecto."""
-    valor = lugar.pills(etiqueta_f, opciones, selection_mode="single", default=defecto, key=clave,
-                        help=ayuda, format_func=formato)
+    widget = lugar.segmented_control if segmentado else lugar.pills
+    valor = widget(etiqueta_f, opciones, selection_mode="single", default=defecto, key=clave,
+                   help=ayuda, format_func=formato)
     return defecto if valor is None else valor
 
 
-st.sidebar.title("Filtros")
-vista = boton_unico(st.sidebar, "Empresa", ["AGROCACAY", "KAHAI", GRUPO], "AGROCACAY", "f_empresa",
-                    "Las empresas se ven por separado. 'Grupo' suma las dos.")
-empresas_vista = list(C.EMPRESAS) if vista == GRUPO else [vista]
-base_empresa = datos[datos["empresa"].isin(empresas_vista)]
-periodos = sorted(base_empresa["periodo"].unique())
+# El encabezado se dibuja ARRIBA de los filtros, pero se llena después (necesita el periodo elegido)
+encabezado = st.container()
 
-anios = sorted({p // 100 for p in periodos})
-anio = boton_unico(st.sidebar, "Año", anios, anios[-1], "f_anio")
-meses_del_anio = [p % 100 for p in periodos if p // 100 == anio]
-AÑO_COMPLETO = "Año completo"
-opciones_mes = [AÑO_COMPLETO] + [NOMBRE_MES[m] for m in meses_del_anio]
-# Año en curso: abre en el último mes. Años anteriores: abre en el año completo.
-defecto_mes = NOMBRE_MES[meses_del_anio[-1]] if anio == anios[-1] else AÑO_COMPLETO
-mes_txt = boton_unico(st.sidebar, "Mes", opciones_mes, defecto_mes, f"f_mes_{anio}")
+# ---- Barra de filtros (arriba, como en la app de campo) ----
+with st.container(key="barra_filtros"):
+    f1, f2, g2 = st.columns([1.25, 3.3, 1.05], gap="medium")
+    vista = boton_unico(f1, "Empresa", ["AGROCACAY", "KAHAI", GRUPO], "AGROCACAY", "f_empresa",
+                        "Las empresas se ven por separado. 'Grupo' suma las dos.", segmentado=True)
+    empresas_vista = list(C.EMPRESAS) if vista == GRUPO else [vista]
+    base_empresa = datos[datos["empresa"].isin(empresas_vista)]
+    periodos = sorted(base_empresa["periodo"].unique())
 
-naturalezas = st.sidebar.pills(
-    "Naturaleza del gasto", ["Operativo", "Intercompañía", "Financiero", "Inversión"],
-    selection_mode="multi", default=C.NATURALEZAS_POR_DEFECTO, key="f_naturaleza",
-    help="Toque para activar o quitar. Financiero = CECO FINANCIERO (intereses, créditos). "
-         "Inversión = CECO ACTIVOS. Intercompañía = compras a la empresa hermana.")
-tipos = st.sidebar.pills("Tipo de gasto", ["Nómina", "Terceros"], selection_mode="multi",
-                         default=["Nómina", "Terceros"], key="f_tipo")
+    anios = sorted({p // 100 for p in periodos})
+    anio = boton_unico(f2, "Año", anios, anios[-1], "f_anio")
+    meses_del_anio = [p % 100 for p in periodos if p // 100 == anio]
+    AÑO_COMPLETO = "Año completo"
+    opciones_mes = [AÑO_COMPLETO] + [NOMBRE_MES[m] for m in meses_del_anio]
+    # Año en curso: abre en el último mes. Años anteriores: abre en el año completo.
+    defecto_mes = NOMBRE_MES[meses_del_anio[-1]] if anio == anios[-1] else AÑO_COMPLETO
+    f3, g1 = st.columns([3.3, 2.3], gap="medium")
+    mes_txt = boton_unico(f3, "Mes", opciones_mes, defecto_mes, f"f_mes_{anio}")
+
+    naturalezas = g1.pills(
+        "Naturaleza del gasto", ["Operativo", "Intercompañía", "Financiero", "Inversión"],
+        selection_mode="multi", default=C.NATURALEZAS_POR_DEFECTO, key="f_naturaleza",
+        help="Toque para activar o quitar. Financiero = CECO FINANCIERO (intereses, créditos). "
+             "Inversión = CECO ACTIVOS. Intercompañía = compras a la empresa hermana.")
+    tipos = g2.pills("Tipo de gasto", ["Nómina", "Terceros"], selection_mode="multi",
+                     default=["Nómina", "Terceros"], key="f_tipo")
 
 df = base_empresa[base_empresa["naturaleza"].isin(naturalezas) & base_empresa["tipo"].isin(tipos)]
 
-# Aviso si hay cargas pendientes de aprobar
+# Color de acento de las tarjetas: el de la empresa elegida (verde de marca para Grupo)
+st.markdown(f"<style>:root {{ --acento: {C.COLOR_EMPRESA.get(vista, VERDE)}; }}</style>", unsafe_allow_html=True)
+
+# Cargas pendientes y última aprobación (se muestran en el encabezado)
+pendientes, texto_aprobacion = [], ""
 if not historial.empty:
     pend = historial[historial["estado"] == "pendiente"]
-    for _, p in pend.iterrows():
-        st.sidebar.warning(f"{p['empresa']}: hay una lectura del {p['fecha_lectura']} pendiente de "
-                           "aprobar. El dashboard aún muestra la versión anterior.")
+    pendientes = [f"{p['empresa']}: hay una lectura del {p['fecha_lectura']} pendiente de aprobar; "
+                  "aquí se ve aún la versión anterior." for _, p in pend.iterrows()
+                  if p["empresa"] in empresas_vista]
     aprob = historial[historial["estado"] == "aprobada"].groupby("empresa")["fecha_decision"].max()
-    st.sidebar.caption("Última aprobación: " + " · ".join(f"{e} {f}" for e, f in aprob.items()))
+    texto_aprobacion = " · ".join(f"{e} {str(f)[:10]}" for e, f in aprob.items() if e in empresas_vista)
 
 if df.empty:
     st.warning("No hay datos con estos filtros.")
@@ -325,9 +388,30 @@ def mostrar_comparativa(t, nombres):
 
 
 titulo_vista = "Grupo AGROCACAY + KAHAI" if vista == GRUPO else vista
-st.title(f"Costos {titulo_vista} — {etq_sel}")
-st.caption(f"Naturaleza: {', '.join(naturalezas) or 'ninguna'} · Tipo: {', '.join(tipos) or 'ninguno'} "
-           "· Valores en pesos colombianos (M = millones)")
+
+
+def _logo_html():
+    import base64
+    ruta = os.path.join(C.CARPETA_APP, "logo_kahai.png")
+    if not os.path.exists(ruta):
+        return ""
+    return f'<img src="data:image/png;base64,{base64.b64encode(open(ruta, "rb").read()).decode()}">'
+
+
+with encabezado:
+    e1, e2 = st.columns([5, 1], vertical_alignment="center") if USUARIO else (st.container(), None)
+    chips = "".join(f'<span class="chip">{t}</span>' for t in
+                    [", ".join(naturalezas) or "sin naturaleza", " + ".join(tipos) or "sin tipo", "Pesos COP · M = millones"])
+    aprobado = f"Cifras aprobadas · última aprobación {texto_aprobacion}" if texto_aprobacion else "Cifras aprobadas"
+    e1.markdown(f"""<div class="enc">{_logo_html()}<div>
+        <div class="tit">Costos {titulo_vista} · {etq_sel}</div>
+        <div class="sub">{aprobado}</div>
+        <div class="sub" style="margin-top:6px">{chips}</div></div></div>""", unsafe_allow_html=True)
+    if USUARIO:
+        e2.caption(f"👤 {USUARIO}")
+        e2.button("Cerrar sesión", on_click=st.logout, key="btn_salir", width="stretch")
+    for aviso in pendientes:
+        st.warning(aviso, icon="⏳")
 
 pest = st.tabs(["Resumen", "Tabla mensual", "Costo unitario", "Gerentes", "Intercompañía", "Movimientos", "Cargas"])
 

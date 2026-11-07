@@ -19,7 +19,8 @@ import streamlit as st
 
 
 def exigir_acceso():
-    """Detiene la página si la persona no ha entrado o no está en la lista."""
+    """Detiene la página si la persona no ha entrado o no está en la lista.
+    Si puede pasar, devuelve su correo."""
     try:
         permitidos = {c.strip().lower() for c in st.secrets.get("ACCESO", [])}
         hay_google = "auth" in st.secrets
@@ -43,6 +44,4 @@ def exigir_acceso():
         st.button("Salir", on_click=st.logout)
         st.stop()
 
-    with st.sidebar:
-        st.caption(f"Conectado: {correo}")
-        st.button("Cerrar sesión", on_click=st.logout, key="btn_salir")
+    return correo   # el encabezado del dashboard lo muestra junto a "Cerrar sesión"
