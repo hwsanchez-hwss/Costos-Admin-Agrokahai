@@ -649,7 +649,7 @@ def cargar_cu(version_datos):
                               "Terceros")   # todo lo que no es nómina
         cu["valor"] = cu["valor"].fillna(0)
         cu["bloque"] = clasificar_bloque(cu)
-        for col in ["ceco", "rubro", "ubicacion", "regla_divisor", "detalle", "descripcion"]:
+        for col in ["ceco", "rubro", "actividad", "ubicacion", "regla_divisor", "detalle", "descripcion"]:
             cu[col] = cu[col].fillna("(sin dato)")
     return cu, ultimo
 
@@ -916,30 +916,45 @@ with pest[2]:
             st.caption("Cada mes: costo ÷ divisor de su regla (árboles del censo, kg cosechados, sitios sembrados "
                        "o árboles vivos). Varios meses o lotes se promedian ponderando por lo que se gastó en cada uno "
                        "— la misma medida 'Costo Unitario Ponderado' de Power BI.")
-            c1, c2, c3, c4 = st.columns([1.2, 1, 2, 2])
-            OPC_VER = {"Rubro": "rubro", "Mano de obra / Otros": "bloque", "Detalle": "detalle",
-                       "Descripción (producto / labor)": "descripcion", "Tipo de gasto": "tipo",
-                       "Ubicación (lote)": "ubicacion", "CECO": "ceco", "Regla de divisor": "regla_divisor"}
-            ver = c1.selectbox("Ver por", list(OPC_VER),
-                               help="Para ver los insumos de un rubro (ej. MIAR): filtre el rubro y elija "
-                                    "'Mano de obra / Otros', 'Detalle' o 'Descripción (producto / labor)'.")
-            por = OPC_VER[ver]
-            eje = c2.radio("Columnas", ["Año", "Mes"], horizontal=True)
-            f_ceco = c3.multiselect("CECO", sorted(cu["ceco"].unique()), placeholder="Todos")
-            f_rubro = c4.multiselect("Rubro", sorted(cu["rubro"].unique()), placeholder="Todos")
+            # Recorrido como en una junta: la empresa ya está en el encabezado; aquí se baja
+            # CECO → Rubro → Actividad → Ubicación. La tabla muestra siempre el SIGUIENTE nivel
+            # al último elegido (sin CECO elegido: una fila por CECO; con CECO: una por rubro; etc.).
+            NIVELES = [("CECO", "ceco"), ("Rubro", "rubro"), ("Actividad", "actividad"), ("Ubicación", "ubicacion")]
+            TODOS = "Todos"
+            cols_n = st.columns([0.9, 1.1, 1.3, 1.7, 1.3])
+            eje = cols_n[0].radio("Columnas", ["Año", "Mes"], horizontal=True)
             base = cu
-            if f_ceco:
-                base = base[base["ceco"].isin(f_ceco)]
-            if f_rubro:
-                base = base[base["rubro"].isin(f_rubro)]
+            elegidos_n, clave = [], "cu"
+            for i, (nombre_n, campo_n) in enumerate(NIVELES):
+                opciones_n = list(base.groupby(campo_n)["valor"].sum().sort_values(ascending=False).index)
+                clave += "_" + (elegidos_n[-1] if elegidos_n else "x")   # al cambiar el nivel de arriba, se reinicia
+                anterior_libre = len(elegidos_n) < i
+                valor_n = cols_n[i + 1].selectbox(nombre_n, [TODOS] + opciones_n, key=f"{clave}_{campo_n}",
+                                                  disabled=anterior_libre,
+                                                  help="Elija el nivel de arriba primero" if anterior_libre else None)
+                if valor_n != TODOS and not anterior_libre:
+                    base = base[base[campo_n] == valor_n]
+                    elegidos_n.append(valor_n)
+            # El nivel que se muestra en filas: el siguiente al último elegido
+            if len(elegidos_n) < len(NIVELES):
+                ver, por = NIVELES[len(elegidos_n)]
+            else:
+                ver, por = "Detalle", "descripcion"
+            ruta = " › ".join([titulo_vista] + elegidos_n)
+            st.markdown(f'<div class="frase">📍 <b>{ruta}</b> &nbsp;·&nbsp; filas por <b>{ver}</b></div>',
+                        unsafe_allow_html=True)
 
             if eje == "Mes":
                 per_cu = sorted(base["periodo"].unique())
                 if len(per_cu) >= 2:
-                    d1, d2 = st.select_slider("Meses ", options=per_cu, format_func=etiqueta,
-                                              value=((max(per_cu[0], seleccion[0]), mes) if anual else
-                                                     (max(per_cu[0], mover(mes, -11)),
-                                                      mes if mes in per_cu else per_cu[-1])))
+                    # Rango por defecto: el año elegido (o los 12 meses hasta el mes elegido), ajustado
+                    # a los meses que sí tienen gasto con estos filtros
+                    ini_d, fin_d = (seleccion[0], mes) if anual else (mover(mes, -11), mes)
+                    ini_v = next((p for p in per_cu if p >= ini_d), per_cu[0])
+                    fin_v = next((p for p in reversed(per_cu) if p <= fin_d), per_cu[-1])
+                    if ini_v > fin_v:
+                        ini_v, fin_v = per_cu[0], per_cu[-1]
+                    d1, d2 = st.select_slider("Meses ", options=per_cu, format_func=etiqueta, value=(ini_v, fin_v))
                     base = base[(base["periodo"] >= d1) & (base["periodo"] <= d2)]
                 base = base.assign(_x=base["periodo"])
             else:
