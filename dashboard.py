@@ -814,8 +814,7 @@ with pest[2]:
                 if parcial:
                     st.caption(f"{a_ref} va hasta {NOMBRE_MES[ult_mes]}: en las tablas de abajo su valor es parcial.")
 
-                t_comp, t_lote, t_base = st.tabs(["👷 Mano de obra vs otros costos", "📍 Por lote",
-                                                  "📐 ¿Con qué base se divide?"])
+                t_comp, t_lote = st.tabs(["👷 Mano de obra vs otros costos", "📍 Por lote"])
                 cols_anio = [str(a) for a in anios_f]
 
                 with t_comp:
@@ -855,10 +854,18 @@ with pest[2]:
                     vis = tabla_c.copy()
                     for c in cols_anio:
                         vis[c] = vis[c].map(unitario)
+                    # Fila del divisor: con qué número de árboles se dividió cada año
+                    nombre_div = "Divisor · árboles censo lotes" if lote_f else "Divisor · árboles vivos"
+                    fila_div = {"Componente": nombre_div}
+                    fila_div.update({c: pesos(arboles_base.get(int(c))) if arboles_base.get(int(c)) else "—"
+                                     for c in cols_anio})
+                    vis = pd.concat([vis, pd.DataFrame([fila_div])], ignore_index=True).fillna("")
                     if parcial and str(a_ref) in vis.columns:
                         vis = vis.rename(columns={str(a_ref): f"{a_ref}{hasta}"})
-                    negrita = lambda r: ["font-weight: bold" if r.iloc[0] in ("TOTAL", "Subtotal mano de obra")
-                                         else "" for _ in r]
+                    negrita = lambda r: (["font-weight: bold" for _ in r]
+                                         if r.iloc[0] in ("TOTAL", "Subtotal mano de obra") else
+                                         ["font-style: italic; color: #5B6470; background-color: #F6F8F5" for _ in r]
+                                         if str(r.iloc[0]).startswith("Divisor") else ["" for _ in r])
                     st.dataframe(vis.style.apply(negrita, axis=1), hide_index=True, width="stretch")
                     st.caption(f"Pesos por árbol al año = gasto del componente ÷ {texto_base}. "
                                "'Otros costos' se abre en sus 3 detalles más grandes.")
@@ -902,34 +909,6 @@ with pest[2]:
                                    "(compras generales de insumos, maquinaria, herramientas): esos solo entran en la vista "
                                    "de toda la finca.")
 
-                with t_base:
-                    pro = fi_l[fi_l["origen_divisor"] == "Propio de la regla"]
-                    reglas = sorted(fi_l["regla_divisor"].unique())
-                    pct_pro = pro.groupby("anio")["valor"].sum() / gasto_anio
-                    # Una sola fila: la base con la que se divide cada año (más fácil de leer)
-                    nombre_base = (f"Árboles del censo de {', '.join(lote_f) if len(lote_f) <= 4 else str(len(lote_f)) + ' lotes'}"
-                                   if lote_f else "Árboles vivos de la finca (ARB_TOTAL)")
-                    filas_b = {nombre_base: arboles_base.reindex(gasto_anio.index).map(pesos)}
-                    tabla_b = pd.DataFrame(filas_b).T
-                    tabla_b.columns = [str(int(c)) for c in tabla_b.columns]
-                    st.dataframe(tabla_b.fillna("—").reset_index().rename(columns={"index": "Concepto"}),
-                                 hide_index=True, width="stretch")
-                    regla_txt = ", ".join(reglas)
-                    st.markdown(f"""
-**Cómo se divide {rubro_f}** (regla del divisor: **{regla_txt}**)
-- **Costo por árbol (arriba):** gasto del año ÷ {texto_base}. Es la cifra para comparar años.
-- **Costo unitario ponderado (Power BI):** cada mes, el gasto de **cada lote** se divide por los árboles de **ese lote**
-  en el censo; lo que no está cargado a un lote se divide por los **árboles vivos de toda la finca**. Luego se promedia
-  pesando por el gasto.""")
-                    # Aviso automático cuando la base cambia mucho de un año a otro
-                    serie = pct_pro.reindex(gasto_anio.index).fillna(0)
-                    saltos = [(int(a), serie[a] - serie[b]) for b, a in zip(serie.index[:-1], serie.index[1:])
-                              if abs(serie[a] - serie[b]) >= 0.25]
-                    for a_s, dif in saltos:
-                        st.warning(f"**Cambio de base en {a_s}:** el gasto cargado a lotes pasó de "
-                                   f"{serie[a_s - 1]:.0%} a {serie[a_s]:.0%}. Por eso el costo unitario ponderado de "
-                                   f"{a_s} no es comparable con el de {a_s - 1} (cambió cómo se reparte, no solo el gasto). "
-                                   "Para comparar años use el **costo por árbol**.", icon="⚠️")
 
             st.divider()
             # ---- Tabla ponderada (igual a la de la app de campo / Power BI)
@@ -987,9 +966,29 @@ with pest[2]:
                 for c in cols_cu:   # como texto, para que lo vacío salga "—"
                     mostrar[c] = mostrar[c].map(unitario)
                 mostrar["% del gasto"] = mostrar["% del gasto"].map(lambda v: f"{v:.1%}".replace(".", ","))
-                st.dataframe(mostrar.style.format(pesos, subset=["Gasto total"])
-                             .apply(lambda r: ["font-weight: bold" if r.iloc[0] == "TOTAL" else "" for _ in r], axis=1),
-                             hide_index=True, width="stretch", height=450)
+                mostrar["Gasto total"] = mostrar["Gasto total"].map(millones)   # en millones: más corto
+                if eje == "Año":
+                    # El divisor de referencia de cada año va en el título de la columna: "2023 (163.626)"
+                    pro_a = base[base["origen_divisor"] == "Propio de la regla"]
+                    mostrar = mostrar.rename(columns={c: f"{c} ({pesos(arb_anio.get(int(c)))})"
+                                                      for c in cols_cu if arb_anio.get(int(c))})
+                estilo_fila = lambda r: (["font-weight: bold" for _ in r] if r.iloc[0] == "TOTAL" else
+                                         ["font-style: italic; color: #5B6470; background-color: #F6F8F5" for _ in r]
+                                         if str(r.iloc[0]).startswith("Divisor") else ["" for _ in r])
+                st.dataframe(mostrar.style.apply(estilo_fila, axis=1),
+                             hide_index=True, width="stretch", height=min(36 * (len(mostrar) + 1) + 6, 950))
+                if eje == "Año":
+                    st.caption("Entre paréntesis, junto a cada año: árboles vivos de la finca (hoja ARB_TOTAL), el divisor de lo que "
+                               "no está cargado a un lote. Lo cargado a un lote se divide por los árboles de ese lote en el censo.")
+                    # Aviso automático cuando la base cambia mucho de un año a otro
+                    serie = (pro_a.groupby("anio")["valor"].sum() / base.groupby("anio")["valor"].sum()).fillna(0)
+                    serie = serie.reindex(sorted(base["anio"].dropna().unique())).fillna(0)
+                    for b_a, a_a in zip(serie.index[:-1], serie.index[1:]):
+                        if abs(serie[a_a] - serie[b_a]) >= 0.25:
+                            st.warning(f"**Cambio de base en {int(a_a)}:** el gasto cargado a lotes pasó de "
+                                       f"{serie[b_a]:.0%} a {serie[a_a]:.0%}. El ponderado de {int(a_a)} no es comparable "
+                                       f"con el de {int(b_a)}: para comparar años use el costo por árbol de la Ficha.",
+                                       icon="⚠️")
 
                 st.caption("El costo unitario ponderado es un promedio pesado por el gasto: por eso las partes "
                            "(ej. mano de obra e insumos) no suman el TOTAL. Para ver cuánto pesa cada parte use "
