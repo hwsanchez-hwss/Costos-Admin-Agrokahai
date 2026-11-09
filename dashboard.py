@@ -98,7 +98,8 @@ st.markdown(f"""
   .st-key-bloque_alcance {{ border-top:4px solid var(--acento); }}
   .frase {{ margin:0 0 0.45rem 0; padding:0.35rem 0.7rem; border-radius:10px; background:#F3F7F3;
              font-size:0.85rem; color:#374151; }}
-  .st-key-btn_restablecer button p {{ font-size:0.82rem; color:#5B6B5E; }}
+  a.restablecer {{ font-size:0.82rem; color:#5B6B5E !important; text-decoration:none; white-space:nowrap; }}
+  a.restablecer:hover {{ color:{VERDE} !important; text-decoration:underline; }}
   .st-key-barra_filtros label p {{ font-size:0.74rem !important; font-weight:700 !important;
                                    text-transform:uppercase; letter-spacing:0.6px; color:#5B6B5E !important; }}
   .st-key-barra_filtros [data-testid="stButtonGroup"] button {{ border-radius:999px; }}
@@ -279,12 +280,6 @@ def boton_unico(lugar, etiqueta_f, opciones, defecto, clave, ayuda=None, formato
 encabezado = st.container()
 
 # ---- Filtros arriba, en dos bloques: PERIODO (cuándo) y ALCANCE (qué se mira) ----
-def restablecer_filtros():
-    """Vuelve todos los filtros a como abre la app."""
-    for k in [k for k in st.session_state if str(k).startswith("f_")]:
-        del st.session_state[k]
-
-
 with st.container(key="barra_filtros"):
     col_alcance, col_periodo = st.columns([1.12, 1.5], gap="small")
     bloque_periodo = col_periodo.container(key="bloque_periodo")
@@ -308,29 +303,41 @@ with st.container(key="barra_filtros"):
     base_empresa = datos[datos["empresa"].isin(empresas_vista)]
     periodos = sorted(base_empresa["periodo"].unique())
 
-    # PERIODO: año y mes
+    # PERIODO: año y mes ("Todos" = todos los años, una columna por año)
     with bloque_periodo:
         anios = sorted({p // 100 for p in periodos})
-        anio = boton_unico(st, "Año", anios, anios[-1], "f_anio")
+        TODOS_ANIOS = "Todos"
+        anio_sel = boton_unico(st, "Año", [TODOS_ANIOS] + anios, anios[-1], "f_anio")
+        todos = anio_sel == TODOS_ANIOS
+        anio = anios[-1] if todos else anio_sel
         meses_del_anio = [p % 100 for p in periodos if p // 100 == anio]
         AÑO_COMPLETO = "Año completo"
-        opciones_mes = [AÑO_COMPLETO] + [NOMBRE_MES[m] for m in meses_del_anio]
-        # Año en curso: abre en el último mes. Años anteriores: abre en el año completo.
-        defecto_mes = NOMBRE_MES[meses_del_anio[-1]] if anio == anios[-1] else AÑO_COMPLETO
-        mes_txt = boton_unico(st, "Mes", opciones_mes, defecto_mes, f"f_mes_{anio}")
-        # Frase que explica contra qué se compara lo elegido (para leer las tarjetas sin dudas)
-        if mes_txt == AÑO_COMPLETO:
+        if todos:
+            mes_txt = AÑO_COMPLETO
             ultimo_m = NOMBRE_MES[meses_del_anio[-1]]
-            hasta = "" if meses_del_anio[-1] == 12 else f" (Ene–{ultimo_m})"
-            frase = f"Año {anio}{hasta} · se compara con los mismos meses de {anio - 1}"
+            frase = (f"Todos los años ({anios[0]}–{anios[-1]}) · una columna por año. "
+                     f"{anios[-1]} va hasta {ultimo_m}" if meses_del_anio[-1] < 12 else
+                     f"Todos los años ({anios[0]}–{anios[-1]}) · una columna por año")
         else:
-            n_m = [k for k, v in NOMBRE_MES.items() if v == mes_txt][0]
-            previo = f"{NOMBRE_MES[n_m - 1]}-{anio}" if n_m > 1 else f"Dic-{anio - 1}"
-            frase = f"{mes_txt}-{anio} · se compara con {previo} (mes anterior) y {mes_txt}-{anio - 1} (año anterior)"
+            opciones_mes = [AÑO_COMPLETO] + [NOMBRE_MES[m] for m in meses_del_anio]
+            # Año en curso: abre en el último mes. Años anteriores: abre en el año completo.
+            defecto_mes = NOMBRE_MES[meses_del_anio[-1]] if anio == anios[-1] else AÑO_COMPLETO
+            mes_txt = boton_unico(st, "Mes", opciones_mes, defecto_mes, f"f_mes_{anio}")
+            # Frase que explica contra qué se compara lo elegido (para leer las tarjetas sin dudas)
+            if mes_txt == AÑO_COMPLETO:
+                ultimo_m = NOMBRE_MES[meses_del_anio[-1]]
+                hasta = "" if meses_del_anio[-1] == 12 else f" (Ene–{ultimo_m})"
+                frase = f"Año {anio}{hasta} · se compara con los mismos meses de {anio - 1}"
+            else:
+                n_m = [k for k, v in NOMBRE_MES.items() if v == mes_txt][0]
+                previo = f"{NOMBRE_MES[n_m - 1]}-{anio}" if n_m > 1 else f"Dic-{anio - 1}"
+                frase = (f"{mes_txt}-{anio} · se compara con {previo} (mes anterior) y "
+                         f"{mes_txt}-{anio - 1} (año anterior)")
         r1, r2 = st.columns([5, 1.1], gap="small", vertical_alignment="center")
         r1.markdown(f'<div class="frase">📌 {frase}</div>', unsafe_allow_html=True)
-        r2.button("↺ Restablecer", on_click=restablecer_filtros, type="tertiary", key="btn_restablecer",
-                  help="Vuelve todos los filtros a como abre la app")
+        # Restablecer = volver a abrir la página (empieza limpia; la sesión de Google se mantiene)
+        r2.markdown('<a class="restablecer" href="./" target="_self" '
+                    'title="Vuelve todos los filtros a como abre la app">↺ Restablecer</a>', unsafe_allow_html=True)
 
 df = base_empresa[base_empresa["naturaleza"].isin(naturalezas) & base_empresa["tipo"].isin(tipos)]
 
@@ -357,7 +364,10 @@ if df.empty:
 #   Año completo: los meses del año contra los mismos meses del año anterior
 # ---------------------------------------------------------------
 anual = mes_txt == AÑO_COMPLETO
-if anual:
+if todos:
+    seleccion = list(periodos)          # todos los meses de todos los años
+    mes = seleccion[-1]
+elif anual:
     seleccion = [p for p in periodos if p // 100 == anio]
     mes = seleccion[-1]
 else:
@@ -371,7 +381,8 @@ acum_ant = [mover(p, -12) for p in acum]
 ult12 = [mover(mes, -k) for k in range(1, 13)]
 anio_ant_completo = [anio * 100 - 100 + m for m in range(1, 13)]
 rango_meses = "" if num_mes == 12 else f" (Ene–{NOMBRE_MES[num_mes]})"
-etq_sel = f"Año {anio}{rango_meses}" if anual else etiqueta(mes)
+etq_sel = (f"Todos los años {anios[0]}–{anios[-1]}" if todos else
+           f"Año {anio}{rango_meses}" if anual else etiqueta(mes))
 etq_acum, etq_acum_ant = f"Ene–{NOMBRE_MES[num_mes]} {anio}", f"Ene–{NOMBRE_MES[num_mes]} {anio - 1}"
 
 
@@ -379,8 +390,20 @@ def suma(d, lista):
     return d.loc[d["periodo"].isin(lista), "valor"].sum()
 
 
-# Columnas de comparación que usan las tablas, según se mire un mes o un año
-if anual:
+# Columnas de comparación que usan las tablas, según se mire un mes, un año o todos los años
+anios_completos = [a for a in anios if any(p // 100 == a and p % 100 == 12 for p in periodos)]
+if todos:
+    COLUMNAS = [(f"Total {anios[0]}–{anios[-1]}", seleccion)] + \
+               [(str(a) + ("" if a in anios_completos else rango_meses), [p for p in periodos if p // 100 == a])
+                for a in anios]
+    PARTICIPACION = {0: "% del total"}
+    # Variación entre los dos últimos años COMPLETOS (el año en curso va incompleto)
+    if len(anios_completos) >= 2:
+        i_u, i_p = anios.index(anios_completos[-1]) + 1, anios.index(anios_completos[-2]) + 1
+        VARIACIONES = [(i_u, i_p, f"Var {anios_completos[-1]} vs {anios_completos[-2]}")]
+    else:
+        VARIACIONES = []
+elif anual:
     COLUMNAS = [(etq_acum, acum), (etq_acum_ant, acum_ant)]
     if num_mes < 12:   # año en curso: también el año anterior completo, como referencia
         COLUMNAS.append((f"Año {anio - 1} completo", anio_ant_completo))
@@ -480,7 +503,21 @@ pest = st.tabs(["Resumen", "Tabla mensual", "Costo unitario", "Gerentes", "Inter
 with pest[0]:
     k = st.columns(4)
     # delta_color="inverse": si el gasto SUBE se muestra en rojo
-    if anual:
+    if todos:
+        por_anio = df.groupby(df["periodo"] // 100)["valor"].sum()
+        k[0].metric(f"Gasto total {anios[0]}–{anios[-1]}", millones(por_anio.sum()))
+        if len(anios_completos) >= 2:
+            a_u, a_p = anios_completos[-1], anios_completos[-2]
+            k[1].metric(f"Año {a_u} (último completo)", millones(por_anio.get(a_u, 0)),
+                        f"{porcentaje(variacion(por_anio.get(a_u, 0), por_anio.get(a_p, 0)))} vs {a_p}",
+                        delta_color="inverse")
+        completos = por_anio.reindex(anios_completos).dropna()
+        k[2].metric(f"Promedio por año ({len(completos)} años completos)",
+                    millones(completos.mean()) if len(completos) else "—")
+        v_sel, v_comp = suma(df, acum), suma(df, acum_ant)
+        k[3].metric(f"Año en curso {etq_acum}", millones(v_sel),
+                    f"{porcentaje(variacion(v_sel, v_comp))} vs {etq_acum_ant}", delta_color="inverse")
+    elif anual:
         v_sel, v_comp = suma(df, acum), suma(df, acum_ant)
         k[0].metric(f"Gasto {etq_acum}", millones(v_sel),
                     f"{porcentaje(variacion(v_sel, v_comp))} vs {etq_acum_ant}", delta_color="inverse")
@@ -584,7 +621,8 @@ with pest[1]:
                              help="Se agrupa en el orden en que se eligen. Actividad y Tercero "
                                   "tienen miles de valores: úselos con pocos meses o filtrando.")
     desde, hasta = c2.select_slider("Meses", options=periodos, format_func=etiqueta,
-                                    value=((seleccion[0], mes) if anual else (max(periodos[0], mover(mes, -11)), mes)))
+                                    value=((acum[0], mes) if todos else (seleccion[0], mes) if anual
+                                           else (max(periodos[0], mover(mes, -11)), mes)))
     if not niveles:
         st.info("Elija al menos un nivel.")
     else:
@@ -628,9 +666,12 @@ with pest[1]:
             st.dataframe(piv.style.format(pesos, subset=cols_num).apply(resaltar, axis=1),
                          hide_index=True, width="stretch", height=600)
 
-        salida = io.BytesIO()
-        piv.to_excel(salida, index=False, sheet_name="Tabla mensual")
-        st.download_button("Descargar en Excel", salida.getvalue(),
+        def excel_tabla(piv=piv):
+            salida = io.BytesIO()
+            piv.to_excel(salida, index=False, sheet_name="Tabla mensual")
+            return salida.getvalue()
+        # El Excel se arma solo al tocar el botón (antes se armaba en cada clic y hacía lenta la app)
+        st.download_button("Descargar en Excel", excel_tabla,
                            file_name=f"Tabla_{vista.split()[0]}_{desde}_{hasta}.xlsx")
 
 
@@ -954,7 +995,7 @@ with pest[2]:
                 if len(per_cu) >= 2:
                     # Rango por defecto: el año elegido (o los 12 meses hasta el mes elegido), ajustado
                     # a los meses que sí tienen gasto con estos filtros
-                    ini_d, fin_d = (seleccion[0], mes) if anual else (mover(mes, -11), mes)
+                    ini_d, fin_d = (acum[0], mes) if todos else (seleccion[0], mes) if anual else (mover(mes, -11), mes)
                     ini_v = next((p for p in per_cu if p >= ini_d), per_cu[0])
                     fin_v = next((p for p in reversed(per_cu) if p <= fin_d), per_cu[-1])
                     if ini_v > fin_v:
@@ -1098,12 +1139,17 @@ with pest[2]:
                                  .format(lambda v: f"{v:.1%}".replace(".", ","), subset=["% del gasto"]),
                                  hide_index=True)
 
-                salida = io.BytesIO()
-                with pd.ExcelWriter(salida, engine="openpyxl") as w:
-                    armar_tabla_cu(base, por, ver).to_excel(w, index=False, sheet_name="CU ponderado")  # completa
-                    base.drop(columns=["_x", "huella"], errors="ignore").to_excel(w, index=False, sheet_name="Detalle filas")
-                st.download_button("Descargar costo unitario en Excel", salida.getvalue(),
-                                   file_name=f"Costo_unitario_AGROCACAY_{eje}.xlsx")
+                tabla_xls, filas_xls = armar_tabla_cu(base, por, ver), base.drop(columns=["_x", "huella"], errors="ignore")
+
+                def excel_cu(t=tabla_xls, f=filas_xls):
+                    salida = io.BytesIO()
+                    with pd.ExcelWriter(salida, engine="openpyxl") as w:
+                        t.to_excel(w, index=False, sheet_name="CU ponderado")  # completa
+                        f.to_excel(w, index=False, sheet_name="Detalle filas")
+                    return salida.getvalue()
+                # El Excel se arma solo al tocar el botón (antes se armaba en cada clic: unos 20 segundos)
+                st.download_button("Descargar costo unitario en Excel", excel_cu,
+                                   file_name=f"Costo_unitario_AGROCACAY_{'anual' if eje == 'Año' else 'mensual'}.xlsx")
 
 
 # ===============================================================
@@ -1161,7 +1207,7 @@ with pest[4]:
 # ===============================================================
 with pest[5]:
     c1, c2 = st.columns([1, 2])
-    meses_mov = c1.multiselect("Meses", periodos[::-1], default=seleccion[::-1], format_func=etiqueta,
+    meses_mov = c1.multiselect("Meses", periodos[::-1], default=(acum if todos else seleccion)[::-1], format_func=etiqueta,
                                placeholder="Elija meses")
     buscar = c2.text_input("Buscar (tercero, descripción, actividad, documento, rubro...)")
     m = df[df["periodo"].isin(meses_mov)]
@@ -1179,9 +1225,11 @@ with pest[5]:
                  hide_index=True, width="stretch", height=550)
     if len(m) > 5000:
         st.caption("Se muestran los 5.000 de mayor valor; la descarga trae todos.")
-    salida = io.BytesIO()
-    m.to_excel(salida, index=False, sheet_name="Movimientos")
-    st.download_button("Descargar movimientos en Excel", salida.getvalue(),
+    def excel_mov(m=m):
+        salida = io.BytesIO()
+        m.to_excel(salida, index=False, sheet_name="Movimientos")
+        return salida.getvalue()
+    st.download_button("Descargar movimientos en Excel", excel_mov,
                        file_name=f"Movimientos_{vista.split()[0]}.xlsx")
 
 
