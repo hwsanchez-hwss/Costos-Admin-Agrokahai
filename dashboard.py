@@ -1085,8 +1085,8 @@ with pest[2]:
                     cols = [c for c in t.columns if c not in (nombre_c, "Gasto total", "% del gasto")]
                     def th_anio(c):
                         if eje == "Año" and arb_anio.get(int(c)):
-                            return f'<th>{c}<div class="sub">{pesos(arb_anio.get(int(c)))} árb.</div></th>'
-                        return f"<th>{c}</th>"
+                            return (f'<th class="anio">{c}<div class="sub">🌳 {pesos(arb_anio.get(int(c)))}</div></th>')
+                        return f'<th class="anio">{c}</th>'
                     cab = (f'<tr><th class="izq">{_html.escape(nombre_c)}</th><th>Gasto total</th><th>% del gasto</th>'
                            + "".join(th_anio(c) for c in cols) + "</tr>")
                     filas_h = []
@@ -1100,12 +1100,14 @@ with pest[2]:
 
                 st.markdown("""<style>
                   .tcu { overflow-x:auto; border:1px solid #E5E7EB; border-radius:10px; margin:0.3rem 0 0.4rem 0; }
-                  .tcu table { border-collapse:collapse; width:100%; font-size:0.86rem; font-variant-numeric:tabular-nums; }
+                  .tcu table { border-collapse:collapse; width:100%; font-size:0.84rem; font-variant-numeric:tabular-nums; }
                   .tcu th { background:#F6F8F5; color:#374151; font-weight:600; text-align:right; padding:0.45rem 0.6rem;
                             border-bottom:1px solid #E1E8DF; white-space:nowrap; vertical-align:bottom; }
-                  .tcu th .sub { font-weight:400; font-size:0.74rem; color:#6B7280; margin-top:1px; }
-                  .tcu td { text-align:right; padding:0.38rem 0.6rem; border-bottom:1px solid #F0F2F0; white-space:nowrap; }
-                  .tcu .izq { text-align:left; white-space:normal; min-width:150px; max-width:260px; }
+                  .tcu th.anio { text-align:center; }
+                  .tcu th .sub { display:table; margin:4px auto 0 auto; padding:1px 7px; border-radius:999px;
+                                 background:#E8F1E8; color:#1B5E20; font-weight:700; font-size:0.72rem; }
+                  .tcu td { text-align:right; padding:0.38rem 0.5rem; border-bottom:1px solid #F0F2F0; white-space:nowrap; }
+                  .tcu .izq { text-align:left; white-space:normal; min-width:140px; max-width:220px; }
                   .tcu tbody tr:hover td { background:#F9FBF9; }
                   .tcu tr.tot td { font-weight:700; border-top:2px solid #CBD5CC; background:#FAFBFA; }
                 </style>""", unsafe_allow_html=True)
