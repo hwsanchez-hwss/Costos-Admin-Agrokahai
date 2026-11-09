@@ -672,6 +672,23 @@ def ponderado(d, por, eje):
     return (r["prod"] / r["deb"].replace(0, np.nan)).rename("cu")
 
 
+def orden_lote(nombre):
+    """L1, L2 ... L25, luego ML1 ... (orden natural, no alfabético)."""
+    import re
+    m = re.match(r"([A-Za-z]+)(\d+)$", str(nombre))
+    return (m.group(1), int(m.group(2))) if m else (str(nombre), 0)
+
+
+def componente_gerencial(d):
+    """Componentes que entiende gerencia: la mano de obra se separa y 'Otros costos' se abre
+    en sus 3 detalles más grandes (insumos, herramientas, etc.); lo demás queda en 'Otros'."""
+    comp = d["bloque"].copy()
+    otros = d["bloque"] == "Otros costos"
+    top = d[otros].groupby("detalle")["valor"].sum().nlargest(3).index
+    comp[otros] = np.where(d.loc[otros, "detalle"].isin(top), d.loc[otros, "detalle"], "Otros (resto)")
+    return comp
+
+
 with pest[2]:
     if vista == "KAHAI":
         st.info("Por ahora el costo unitario se calcula solo para la parte agrícola (AGROCACAY). "
@@ -737,6 +754,192 @@ with pest[2]:
             st.caption(f"Gasto del periodo ÷ árboles vivos del año (hoja ARB_TOTAL: "
                        f"{pesos(arb_anio.get(anio))} en {anio}, {pesos(arb_anio.get(anio - 1))} en {anio - 1}).")
 
+            # ---- FICHA POR RUBRO (vista de gerencia): costo por árbol al año, por componente y por lote
+            st.subheader("🔎 Ficha por rubro")
+            st.caption("Lectura directa: **gasto del año ÷ árboles**. Las partes suman el total, se puede "
+                       "comparar año contra año y filtrar por lote.")
+            lotes_cu = sorted(datos_cu.loc[datos_cu["censo"] > 0, "ubicacion"].unique(), key=orden_lote)
+            gasto_rubro = cu.groupby("rubro")["valor"].sum().sort_values(ascending=False)
+            fr1, fr2, fr3 = st.columns([1.3, 1.3, 2.4])
+            rubro_f = fr1.selectbox("Rubro", list(gasto_rubro.index),
+                                    index=list(gasto_rubro.index).index("MIAR") if "MIAR" in gasto_rubro.index else 0,
+                                    key="ficha_rubro")
+            ceco_f = fr2.multiselect("CECO", sorted(cu.loc[cu["rubro"] == rubro_f, "ceco"].unique()),
+                                     placeholder="Todos", key="ficha_ceco")
+            lote_f = fr3.multiselect("Lote", lotes_cu, placeholder="Toda la finca (todos los lotes y lo general)",
+                                     key="ficha_lote",
+                                     help="Sin lote elegido: gasto total del rubro ÷ árboles vivos del año. "
+                                          "Con lotes: solo el gasto cargado a esos lotes ÷ sus árboles del censo.")
+            fi = cu[cu["rubro"] == rubro_f]
+            if ceco_f:
+                fi = fi[fi["ceco"].isin(ceco_f)]
+            fi = fi.assign(componente=componente_gerencial(fi))
+            if lote_f:
+                fi_l = fi[fi["ubicacion"].isin(lote_f)]
+                # árboles de la base: censo de los lotes elegidos, cada año
+                arboles_base = (datos_cu[datos_cu["ubicacion"].isin(lote_f)]
+                                .groupby(["anio", "ubicacion"])["censo"].max().groupby("anio").sum())
+                texto_base = f"árboles del censo de {', '.join(lote_f) if len(lote_f) <= 4 else str(len(lote_f)) + ' lotes'}"
+            else:
+                fi_l = fi
+                arboles_base = arb_anio
+                texto_base = "árboles vivos de la finca (hoja ARB_TOTAL)"
+            anios_f = sorted(fi_l["anio"].dropna().unique().astype(int))
+
+            if fi_l.empty or not anios_f:
+                st.info("No hay gasto de este rubro con estos filtros.")
+            else:
+                gasto_anio = fi_l.groupby("anio")["valor"].sum()
+                cpa = (gasto_anio / arboles_base.reindex(gasto_anio.index).replace(0, np.nan))
+                a_ref = anio if anio in cpa.index else anios_f[-1]
+                mo = fi_l[fi_l["bloque"].isin(["Mano de obra (nómina)", "Mano de obra al contrato"])]
+                pct_mo = None
+                if gasto_anio.get(a_ref):
+                    pct_mo = mo.loc[mo["anio"] == a_ref, "valor"].sum() / gasto_anio.get(a_ref)
+                # ¿El año de referencia está completo? (si no, se compara contra los mismos meses del año anterior)
+                ult_mes = int(datos_cu.loc[datos_cu["anio"] == a_ref, "mes_num"].max())
+                parcial = ult_mes < 12
+                hasta = f" (Ene–{NOMBRE_MES[ult_mes]})" if parcial else ""
+                g_prev = fi_l[(fi_l["anio"] == a_ref - 1) & (fi_l["mes_num"] <= ult_mes)]["valor"].sum()
+                arb_prev = arboles_base.get(a_ref - 1)
+                cpa_prev = g_prev / arb_prev if arb_prev and g_prev else None
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric(f"Costo por árbol {a_ref}{hasta}", unitario(cpa.get(a_ref)),
+                          f"{porcentaje(variacion(cpa.get(a_ref), cpa_prev))} vs {a_ref - 1}{hasta}"
+                          if cpa_prev else None, delta_color="inverse")
+                k2.metric(f"Gasto {a_ref}{hasta}", millones(gasto_anio.get(a_ref, 0)))
+                k3.metric("Árboles de la base", pesos(arboles_base.get(a_ref)), help=texto_base)
+                k4.metric("Peso de la mano de obra", "—" if pct_mo is None else f"{pct_mo:.0%}",
+                          help="Mano de obra de nómina + al contrato, como % del gasto del rubro")
+                if parcial:
+                    st.caption(f"{a_ref} va hasta {NOMBRE_MES[ult_mes]}: en las tablas de abajo su valor es parcial.")
+
+                t_comp, t_lote, t_base = st.tabs(["👷 Mano de obra vs otros costos", "📍 Por lote",
+                                                  "📐 ¿Con qué base se divide?"])
+                cols_anio = [str(a) for a in anios_f]
+
+                with t_comp:
+                    comp = fi_l.groupby(["componente", "anio"])["valor"].sum().unstack("anio")
+                    comp = comp.div(arboles_base.reindex(comp.columns).replace(0, np.nan), axis=1)
+                    orden_c = [c for c in ["Mano de obra (nómina)", "Mano de obra al contrato"] if c in comp.index]
+                    resto = [c for c in comp.index if c not in orden_c and c not in ("Otros (resto)",
+                                                                                     "Intercompañía", "Financiero",
+                                                                                     "Inversión")]
+                    orden_c += sorted(resto, key=lambda c: -comp.loc[c].fillna(0).sum())
+                    orden_c += [c for c in ["Otros (resto)", "Intercompañía", "Financiero", "Inversión"]
+                                if c in comp.index]
+                    comp = comp.reindex(orden_c)
+                    # para la variación: mismo tramo de meses del año anterior (si el último año va incompleto)
+                    a_ult, a_pen = anios_f[-1], (anios_f[-2] if len(anios_f) >= 2 else None)
+                    prev = fi_l[fi_l["anio"] == a_pen]
+                    if a_ult == a_ref and parcial:
+                        prev = prev[prev["mes_num"] <= ult_mes]
+                    comp_prev = (prev.groupby("componente")["valor"].sum()
+                                 / (arboles_base.get(a_pen) or np.nan)).reindex(comp.index)
+                    comp = comp.assign(_prev=comp_prev)
+                    filas_c = []
+                    n_mo = len([c for c in orden_c if c.startswith("Mano de obra")])
+                    sub_mo = comp.iloc[:n_mo].sum(min_count=1)
+                    for i, (nombre, fila) in enumerate(comp.iterrows()):
+                        filas_c.append([("   " if nombre.startswith("Mano de obra") else "") + nombre] + list(fila))
+                        if n_mo and i == n_mo - 1:
+                            filas_c.append(["Subtotal mano de obra"] + list(sub_mo))
+                    filas_c.append(["TOTAL"] + list(comp.sum(min_count=1)))
+                    tabla_c = pd.DataFrame(filas_c, columns=["Componente"] + cols_anio + ["_prev"])
+                    if a_pen is not None:
+                        tramo = f" ({hasta.strip(' ()')})" if (a_ult == a_ref and parcial) else ""
+                        tabla_c[f"Var. {a_ult} vs {a_pen}{tramo}"] = [porcentaje(variacion(a, b)) for a, b in
+                                                                       zip(tabla_c[str(a_ult)], tabla_c["_prev"])]
+                    tabla_c = tabla_c.drop(columns="_prev")
+                    comp = comp.drop(columns="_prev")
+                    vis = tabla_c.copy()
+                    for c in cols_anio:
+                        vis[c] = vis[c].map(unitario)
+                    if parcial and str(a_ref) in vis.columns:
+                        vis = vis.rename(columns={str(a_ref): f"{a_ref}{hasta}"})
+                    negrita = lambda r: ["font-weight: bold" if r.iloc[0] in ("TOTAL", "Subtotal mano de obra")
+                                         else "" for _ in r]
+                    st.dataframe(vis.style.apply(negrita, axis=1), hide_index=True, width="stretch")
+                    st.caption(f"Pesos por árbol al año = gasto del componente ÷ {texto_base}. "
+                               "'Otros costos' se abre en sus 3 detalles más grandes.")
+                    # gráfica apilada: cuánto de cada peso por árbol es mano de obra
+                    fig_c = go.Figure()
+                    paleta_c = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6", "#008300", "#52514e"]
+                    for i, (nombre, fila) in enumerate(comp.iterrows()):
+                        fig_c.add_bar(x=cols_anio, y=fila.values, name=nombre, marker_color=paleta_c[i % len(paleta_c)],
+                                      hovertemplate=nombre + "<br>%{x}: $%{y:,.0f} por árbol<extra></extra>")
+                    fig_c.update_layout(barmode="stack", height=340, separators=",.", bargap=0.35,
+                                        title=f"{rubro_f}: pesos por árbol al año",
+                                        legend=dict(orientation="h", y=1.18, x=0), margin=dict(l=10, r=10, t=80, b=10),
+                                        plot_bgcolor="rgba(0,0,0,0)", yaxis=dict(gridcolor="rgba(128,128,128,0.2)"))
+                    st.plotly_chart(fig_c, width="stretch")
+
+                with t_lote:
+                    en_lote = fi[fi["ubicacion"].isin(lotes_cu)]
+                    if lote_f:
+                        en_lote = en_lote[en_lote["ubicacion"].isin(lote_f)]
+                    if en_lote.empty:
+                        st.info("Este rubro no tiene gasto cargado a lotes (todo es general de la finca).")
+                    else:
+                        g_l = en_lote.groupby(["ubicacion", "anio"])["valor"].sum()
+                        a_l = (datos_cu[datos_cu["ubicacion"].isin(g_l.index.get_level_values(0))]
+                               .groupby(["ubicacion", "anio"])["censo"].max())
+                        t_l = (g_l / a_l.reindex(g_l.index).replace(0, np.nan)).unstack("anio")
+                        t_l = t_l.reindex(sorted(t_l.index, key=orden_lote))
+                        t_l.columns = [str(int(c)) for c in t_l.columns]
+                        gasto_l = en_lote[en_lote["anio"] == a_ref].groupby("ubicacion")["valor"].sum()
+                        vis_l = t_l.copy()
+                        for c in vis_l.columns:
+                            vis_l[c] = vis_l[c].map(unitario)
+                        vis_l.insert(0, f"Gasto {a_ref}", gasto_l.reindex(t_l.index).fillna(0).map(millones))
+                        vis_l.insert(1, f"Árboles {a_ref}", a_l.xs(a_ref, level="anio").reindex(t_l.index).map(pesos)
+                                     if a_ref in a_l.index.get_level_values("anio") else "—")
+                        st.dataframe(vis_l.reset_index().rename(columns={"ubicacion": "Lote"}),
+                                     hide_index=True, width="stretch", height=min(38 * (len(vis_l) + 1) + 4, 520))
+                        sin_lote = fi[~fi["ubicacion"].isin(lotes_cu) & (fi["anio"] == a_ref)]["valor"].sum()
+                        st.caption(f"Pesos por árbol al año = gasto cargado al lote ÷ árboles del lote en el censo de ese año. "
+                                   f"Además, {millones(sin_lote)} de {a_ref} no están cargados a ningún lote "
+                                   "(compras generales de insumos, maquinaria, herramientas): esos solo entran en la vista "
+                                   "de toda la finca.")
+
+                with t_base:
+                    pro = fi_l[fi_l["origen_divisor"] == "Propio de la regla"]
+                    reglas = sorted(fi_l["regla_divisor"].unique())
+                    lotes_g = fi_l[fi_l["ubicacion"].isin(lotes_cu)].groupby("anio")["ubicacion"].nunique()
+                    arboles_censo = pro.groupby(["anio", "ubicacion"])["divisor"].max().groupby("anio").sum()
+                    pct_pro = pro.groupby("anio")["valor"].sum() / gasto_anio
+                    cu_pond = ponderado(fi_l, None, "anio")
+                    filas_b = {
+                        "Gasto del año": gasto_anio.map(millones),
+                        "Árboles vivos de la finca (ARB_TOTAL)": arb_anio.reindex(gasto_anio.index).map(pesos),
+                        "Lotes con gasto": lotes_g.reindex(gasto_anio.index).fillna(0).astype(int).astype(str),
+                        "% del gasto cargado a lotes con censo": pct_pro.reindex(gasto_anio.index).fillna(0)
+                            .map(lambda v: f"{v:.0%}"),
+                        "Árboles del censo de esos lotes": arboles_censo.reindex(gasto_anio.index).map(pesos),
+                        "Costo unitario ponderado (Power BI)": cu_pond.reindex(gasto_anio.index).map(unitario),
+                    }
+                    tabla_b = pd.DataFrame(filas_b).T
+                    tabla_b.columns = [str(int(c)) for c in tabla_b.columns]
+                    st.dataframe(tabla_b.fillna("—").reset_index().rename(columns={"index": "Concepto"}),
+                                 hide_index=True, width="stretch")
+                    regla_txt = ", ".join(reglas)
+                    st.markdown(f"""
+**Cómo se divide {rubro_f}** (regla del divisor: **{regla_txt}**)
+- **Costo por árbol (arriba):** gasto del año ÷ {texto_base}. Es la cifra para comparar años.
+- **Costo unitario ponderado (Power BI):** cada mes, el gasto de **cada lote** se divide por los árboles de **ese lote**
+  en el censo; lo que no está cargado a un lote se divide por los **árboles vivos de toda la finca**. Luego se promedia
+  pesando por el gasto.""")
+                    # Aviso automático cuando la base cambia mucho de un año a otro
+                    serie = pct_pro.reindex(gasto_anio.index).fillna(0)
+                    saltos = [(int(a), serie[a] - serie[b]) for b, a in zip(serie.index[:-1], serie.index[1:])
+                              if abs(serie[a] - serie[b]) >= 0.25]
+                    for a_s, dif in saltos:
+                        st.warning(f"**Cambio de base en {a_s}:** el gasto cargado a lotes pasó de "
+                                   f"{serie[a_s - 1]:.0%} a {serie[a_s]:.0%}. Por eso el costo unitario ponderado de "
+                                   f"{a_s} no es comparable con el de {a_s - 1} (cambió cómo se reparte, no solo el gasto). "
+                                   "Para comparar años use el **costo por árbol**.", icon="⚠️")
+
+            st.divider()
             # ---- Tabla ponderada (igual a la de la app de campo / Power BI)
             st.subheader("Costo unitario ponderado")
             st.caption("Cada mes: costo ÷ divisor de su regla (árboles del censo, kg cosechados, sitios sembrados "
