@@ -75,7 +75,7 @@ st.markdown(f"""
   /* Encabezado */
   .enc {{ display:flex; align-items:center; gap:1rem; padding:0.9rem 1.3rem; border-radius:14px;
           background: linear-gradient(120deg, #0F3D1F 0%, {VERDE} 70%, #2E7D32 100%); color:#fff; }}
-  .enc img {{ height:52px; background:#fff; border-radius:10px; padding:4px 8px; }}
+  .enc img {{ height:62px; background:#fff; border-radius:10px; padding:6px 10px; }}
   .enc .tit {{ font-size:1.55rem; font-weight:700; line-height:1.15; letter-spacing:0.2px; }}
   .enc .sub {{ font-size:0.92rem; opacity:0.88; margin-top:2px; }}
   @media (max-width: 640px) {{
@@ -120,6 +120,14 @@ st.markdown(f"""
   .st-key-f_empresa [role="radiogroup"] > button[data-selected="true"] {{
         background:{VERDE} !important; border-color:{VERDE} !important; }}
   .st-key-f_empresa [role="radiogroup"] > button[data-selected="true"] p {{ color:#fff !important; font-weight:600; }}
+  /* Año: 6 por fila (Todos + 5 años arriba, el resto abajo) */
+  .st-key-f_anio [role="toolbar"], .st-key-f_anio [role="radiogroup"] {{ display:grid !important;
+        grid-template-columns:repeat(6, minmax(3.6rem, max-content)); gap:6px; overflow:visible !important; }}
+  .st-key-f_anio button {{ margin:0 !important; justify-content:center; }}
+  /* Naturaleza: 2 x 2 */
+  .st-key-f_naturaleza [role="toolbar"] {{ display:grid !important; grid-template-columns:repeat(2, 1fr);
+        gap:6px; overflow:visible !important; width:fit-content; }}
+  .st-key-f_naturaleza [role="toolbar"] > button {{ width:100%; margin:0 !important; }}
   /* Tipo de gasto: Nómina y Terceros uno debajo del otro */
   .st-key-f_tipo [role="toolbar"] {{ display:grid !important; grid-template-columns:7.5rem; gap:6px;
         width:fit-content; overflow:visible !important; }}
@@ -281,7 +289,7 @@ encabezado = st.container()
 
 # ---- Filtros arriba, en dos bloques: PERIODO (cuándo) y ALCANCE (qué se mira) ----
 with st.container(key="barra_filtros"):
-    col_alcance, col_periodo = st.columns([1.12, 1.5], gap="small")
+    col_alcance, col_periodo = st.columns([0.8, 1.5], gap="small")
     bloque_periodo = col_periodo.container(key="bloque_periodo")
     bloque_alcance = col_alcance.container(key="bloque_alcance")
 
@@ -497,7 +505,9 @@ titulo_vista = "Grupo AGROCACAY + KAHAI" if vista == GRUPO else vista
 
 def _logo_html():
     import base64
-    ruta = os.path.join(C.CARPETA_APP, "logo_kahai.png")
+    ruta = os.path.join(C.CARPETA_APP, "logo_kahai_recortado.png")   # sin márgenes: se ve más grande y nítido
+    if not os.path.exists(ruta):
+        ruta = os.path.join(C.CARPETA_APP, "logo_kahai.png")
     if not os.path.exists(ruta):
         return ""
     return f'<img src="data:image/png;base64,{base64.b64encode(open(ruta, "rb").read()).decode()}">'
