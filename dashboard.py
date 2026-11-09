@@ -32,6 +32,30 @@ import fuente_datos as F
 st.set_page_config(page_title="Costos AGROCACAY · KAHAI", page_icon="📊", layout="wide",
                    initial_sidebar_state="collapsed")
 
+# Evitar que el navegador (Edge/Chrome) traduzca la página: el traductor cambia el HTML por dentro
+# y Streamlit se cae con 'removeChild'. Va ANTES del inicio de sesión para que proteja también esa pantalla.
+# ===============================================================
+# 3. FILTROS (barra lateral, con botones)
+# ===============================================================
+# Evitar que el navegador "traduzca" la página (ya está en español; el traductor
+# cambiaba, por ejemplo, "Nómina" por "Nombre")
+_SIN_TRADUCIR = """
+document.documentElement.lang = 'es';
+document.documentElement.setAttribute('translate', 'no');
+document.documentElement.setAttribute('lang', 'es');
+document.documentElement.classList.add('notranslate');
+if (!document.querySelector('meta[name="google"]')) {
+  const m = document.createElement('meta'); m.name = 'google'; m.content = 'notranslate';
+  document.head.appendChild(m);
+}"""
+try:
+    st.html(f"<script>{_SIN_TRADUCIR}</script>", unsafe_allow_javascript=True)
+except TypeError:   # versiones de Streamlit más antiguas
+    import streamlit.components.v1 as componentes
+    componentes.html("<script>" + _SIN_TRADUCIR.replace("document", "window.parent.document") + "</script>",
+                     height=0)
+
+
 # En la nube se exige "Iniciar sesión con Google" (solo correos autorizados); en el PC no.
 USUARIO = None
 if F.en_la_nube():
@@ -241,25 +265,6 @@ if datos.empty:
     st.stop()
 
 
-# ===============================================================
-# 3. FILTROS (barra lateral, con botones)
-# ===============================================================
-# Evitar que el navegador "traduzca" la página (ya está en español; el traductor
-# cambiaba, por ejemplo, "Nómina" por "Nombre")
-_SIN_TRADUCIR = """
-document.documentElement.lang = 'es';
-document.documentElement.setAttribute('translate', 'no');
-document.documentElement.classList.add('notranslate');
-if (!document.querySelector('meta[name="google"]')) {
-  const m = document.createElement('meta'); m.name = 'google'; m.content = 'notranslate';
-  document.head.appendChild(m);
-}"""
-try:
-    st.html(f"<script>{_SIN_TRADUCIR}</script>", unsafe_allow_javascript=True)
-except TypeError:   # versiones de Streamlit más antiguas
-    import streamlit.components.v1 as componentes
-    componentes.html("<script>" + _SIN_TRADUCIR.replace("document", "window.parent.document") + "</script>",
-                     height=0)
 
 
 def boton_unico(lugar, etiqueta_f, opciones, defecto, clave, ayuda=None, formato=None, segmentado=False):
