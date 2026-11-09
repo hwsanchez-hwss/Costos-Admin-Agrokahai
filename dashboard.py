@@ -963,38 +963,71 @@ with pest[2]:
             if base.empty:
                 st.info("No hay datos con estos filtros.")
             else:
-                tabla_cu = ponderado(base, por, "_x").unstack("_x")
-                total_cu = ponderado(base, None, "_x")
-                tabla_cu.loc["TOTAL"] = total_cu
-                gasto = base.groupby(por)["valor"].sum()
-                orden = list(gasto.sort_values(ascending=False).index) + ["TOTAL"]
-                tabla_cu = tabla_cu.reindex([o for o in orden if o in tabla_cu.index])
-                if eje == "Mes":
-                    tabla_cu.columns = [etiqueta(c) for c in tabla_cu.columns]
-                else:
-                    tabla_cu.columns = [str(int(c)) for c in tabla_cu.columns]
-                tabla_cu.insert(0, "Gasto total", gasto.reindex(tabla_cu.index).fillna(base["valor"].sum()))
-                tabla_cu.insert(1, "% del gasto", tabla_cu["Gasto total"] / base["valor"].sum())
-                tabla_cu = tabla_cu.reset_index().rename(columns={por: ver})
+                import html as _html
+
+                def armar_tabla_cu(b, por_c, nombre_c):
+                    """Tabla ponderada: filas = por_c (orden de mayor a menor gasto) + TOTAL; columnas = años o meses."""
+                    t = ponderado(b, por_c, "_x").unstack("_x")
+                    t.loc["TOTAL"] = ponderado(b, None, "_x")
+                    g = b.groupby(por_c)["valor"].sum()
+                    orden_g = list(g.sort_values(ascending=False).index)
+                    orden_g = [o for o in orden_g if not str(o).startswith("Otras (")] + \
+                              [o for o in orden_g if str(o).startswith("Otras (")]   # 'Otras' al final
+                    t = t.reindex([o for o in orden_g + ["TOTAL"] if o in t.index])
+                    t.columns = [etiqueta(c) for c in t.columns] if eje == "Mes" else [str(int(c)) for c in t.columns]
+                    t.insert(0, "Gasto total", g.reindex(t.index).fillna(b["valor"].sum()))
+                    t.insert(1, "% del gasto", t["Gasto total"] / b["valor"].sum())
+                    t.index.name = nombre_c
+                    return t.reset_index()
+
+                def html_tabla_cu(t, nombre_c):
+                    """Tabla ejecutiva en HTML: el año arriba y, en una segunda línea, su divisor (árboles vivos)."""
+                    cols = [c for c in t.columns if c not in (nombre_c, "Gasto total", "% del gasto")]
+                    def th_anio(c):
+                        if eje == "Año" and arb_anio.get(int(c)):
+                            return f'<th>{c}<div class="sub">{pesos(arb_anio.get(int(c)))} árb.</div></th>'
+                        return f"<th>{c}</th>"
+                    cab = (f'<tr><th class="izq">{_html.escape(nombre_c)}</th><th>Gasto total</th><th>% del gasto</th>'
+                           + "".join(th_anio(c) for c in cols) + "</tr>")
+                    filas_h = []
+                    for _, r in t.iterrows():
+                        clase = ' class="tot"' if r[nombre_c] == "TOTAL" else ""
+                        pct_txt = f"{r['% del gasto']:.1%}".replace(".", ",")
+                        filas_h.append(f"<tr{clase}><td class='izq'>{_html.escape(str(r[nombre_c]))}</td>"
+                                       f"<td>{millones(r['Gasto total'])}</td><td>{pct_txt}</td>"
+                                       + "".join(f"<td>{unitario(r[c])}</td>" for c in cols) + "</tr>")
+                    return f'<div class="tcu"><table><thead>{cab}</thead><tbody>{"".join(filas_h)}</tbody></table></div>'
+
+                st.markdown("""<style>
+                  .tcu { overflow-x:auto; border:1px solid #E5E7EB; border-radius:10px; margin:0.3rem 0 0.4rem 0; }
+                  .tcu table { border-collapse:collapse; width:100%; font-size:0.86rem; font-variant-numeric:tabular-nums; }
+                  .tcu th { background:#F6F8F5; color:#374151; font-weight:600; text-align:right; padding:0.45rem 0.6rem;
+                            border-bottom:1px solid #E1E8DF; white-space:nowrap; vertical-align:bottom; }
+                  .tcu th .sub { font-weight:400; font-size:0.74rem; color:#6B7280; margin-top:1px; }
+                  .tcu td { text-align:right; padding:0.38rem 0.6rem; border-bottom:1px solid #F0F2F0; white-space:nowrap; }
+                  .tcu .izq { text-align:left; white-space:normal; min-width:150px; max-width:260px; }
+                  .tcu tbody tr:hover td { background:#F9FBF9; }
+                  .tcu tr.tot td { font-weight:700; border-top:2px solid #CBD5CC; background:#FAFBFA; }
+                </style>""", unsafe_allow_html=True)
+
+                def agrupar_resto(b, por_c, n=15):
+                    """Para leer en una junta: los n de mayor gasto y el resto junto en 'Otras (k)'."""
+                    g = b.groupby(por_c)["valor"].sum().sort_values(ascending=False)
+                    if len(g) <= n + 1 or st.session_state.get("cu_ver_todas"):
+                        return b
+                    resto = g.index[n:]
+                    return b.assign(**{por_c: b[por_c].where(~b[por_c].isin(resto), f"Otras ({len(resto)})")})
+
+                tabla_cu = armar_tabla_cu(agrupar_resto(base, por), por, ver)
                 cols_cu = [c for c in tabla_cu.columns if c not in (ver, "Gasto total", "% del gasto")]
-                mostrar = tabla_cu.copy()
-                for c in cols_cu:   # como texto, para que lo vacío salga "—"
-                    mostrar[c] = mostrar[c].map(unitario)
-                mostrar["% del gasto"] = mostrar["% del gasto"].map(lambda v: f"{v:.1%}".replace(".", ","))
-                mostrar["Gasto total"] = mostrar["Gasto total"].map(millones)   # en millones: más corto
+                st.markdown(html_tabla_cu(tabla_cu, ver), unsafe_allow_html=True)
+                if base[por].nunique() > 16:
+                    st.toggle(f"Ver todas las filas ({base[por].nunique()})", key="cu_ver_todas",
+                              help="Por defecto se muestran los 15 de mayor gasto y el resto se junta en 'Otras'.")
+                pro_a = base[base["origen_divisor"] == "Propio de la regla"]
                 if eje == "Año":
-                    # El divisor de referencia de cada año va en el título de la columna: "2023 (163.626)"
-                    pro_a = base[base["origen_divisor"] == "Propio de la regla"]
-                    mostrar = mostrar.rename(columns={c: f"{c} ({pesos(arb_anio.get(int(c)))})"
-                                                      for c in cols_cu if arb_anio.get(int(c))})
-                estilo_fila = lambda r: (["font-weight: bold" for _ in r] if r.iloc[0] == "TOTAL" else
-                                         ["font-style: italic; color: #5B6470; background-color: #F6F8F5" for _ in r]
-                                         if str(r.iloc[0]).startswith("Divisor") else ["" for _ in r])
-                st.dataframe(mostrar.style.apply(estilo_fila, axis=1),
-                             hide_index=True, width="stretch", height=min(36 * (len(mostrar) + 1) + 6, 950))
-                if eje == "Año":
-                    st.caption("Entre paréntesis, junto a cada año: árboles vivos de la finca (hoja ARB_TOTAL), el divisor de lo que "
-                               "no está cargado a un lote. Lo cargado a un lote se divide por los árboles de ese lote en el censo.")
+                    st.caption("Debajo de cada año: árboles vivos de la finca (hoja ARB_TOTAL), el divisor de lo que no está "
+                               "cargado a un lote. Lo cargado a un lote se divide por los árboles de ese lote en el censo.")
                     # Aviso automático cuando la base cambia mucho de un año a otro
                     serie = (pro_a.groupby("anio")["valor"].sum() / base.groupby("anio")["valor"].sum()).fillna(0)
                     serie = serie.reindex(sorted(base["anio"].dropna().unique())).fillna(0)
@@ -1005,12 +1038,35 @@ with pest[2]:
                                        f"con el de {int(b_a)}: para comparar años use el costo por árbol de la Ficha.",
                                        icon="⚠️")
 
+
+                # Pestañas desplegables: la misma tabla solo con mano de obra, y los insumos/servicios por DETALLE
+                total_base = base["valor"].sum()
+                mo_b = base[base["bloque"].isin(["Mano de obra (nómina)", "Mano de obra al contrato"])]
+                ot_b = base[base["bloque"] == "Otros costos"]
+                pct = lambda d: f"{d['valor'].sum() / total_base:.0%}" if total_base else "—"
+                with st.expander(f"👷 Mano de obra · {millones(mo_b['valor'].sum())} ({pct(mo_b)} del gasto)"):
+                    if mo_b.empty:
+                        st.info("No hay mano de obra con estos filtros.")
+                    else:
+                        st.markdown(html_tabla_cu(armar_tabla_cu(agrupar_resto(mo_b, por), por, ver), ver),
+                                    unsafe_allow_html=True)
+                        st.caption("Nómina (jornales de la app de campo) + mano de obra al contrato.")
+                with st.expander(f"📦 Insumos, servicios y otros costos · {millones(ot_b['valor'].sum())} "
+                                 f"({pct(ot_b)} del gasto)"):
+                    if ot_b.empty:
+                        st.info("No hay insumos ni servicios con estos filtros.")
+                    else:
+                        st.markdown(html_tabla_cu(armar_tabla_cu(agrupar_resto(ot_b, "detalle"), "detalle", "Detalle"),
+                                                  "Detalle"),
+                                    unsafe_allow_html=True)
+                        st.caption("Abierto por la columna DETALLE del Excel (insumos agrícolas, herramientas y equipos, "
+                                   "servicios, combustible…).")
                 st.caption("El costo unitario ponderado es un promedio pesado por el gasto: por eso las partes "
                            "(ej. mano de obra e insumos) no suman el TOTAL. Para ver cuánto pesa cada parte use "
                            "'% del gasto'.")
 
                 # Gráfica: los 5 de mayor gasto (se pueden cambiar)
-                opciones = [o for o in tabla_cu[ver] if o != "TOTAL"]
+                opciones = [o for o in tabla_cu[ver] if o != "TOTAL" and not str(o).startswith("Otras (")]
                 elegidos = st.multiselect("Graficar", opciones + ["TOTAL"], default=opciones[:5], placeholder="Elija qué graficar")
                 if elegidos:
                     fig = go.Figure()
@@ -1039,7 +1095,7 @@ with pest[2]:
 
                 salida = io.BytesIO()
                 with pd.ExcelWriter(salida, engine="openpyxl") as w:
-                    tabla_cu.to_excel(w, index=False, sheet_name="CU ponderado")
+                    armar_tabla_cu(base, por, ver).to_excel(w, index=False, sheet_name="CU ponderado")  # completa
                     base.drop(columns=["_x", "huella"], errors="ignore").to_excel(w, index=False, sheet_name="Detalle filas")
                 st.download_button("Descargar costo unitario en Excel", salida.getvalue(),
                                    file_name=f"Costo_unitario_AGROCACAY_{eje}.xlsx")
