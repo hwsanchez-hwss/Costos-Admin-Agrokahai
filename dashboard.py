@@ -313,11 +313,17 @@ with st.container(key="barra_filtros"):
         meses_del_anio = [p % 100 for p in periodos if p // 100 == anio]
         AÑO_COMPLETO = "Año completo"
         if todos:
-            mes_txt = AÑO_COMPLETO
+            # Con "Todos" también se puede elegir un mes: ese mes en cada año (Sep-2018 … Sep-2026)
+            meses_todos = sorted({p % 100 for p in periodos})
+            mes_txt = boton_unico(st, "Mes", [AÑO_COMPLETO] + [NOMBRE_MES[m] for m in meses_todos],
+                                  AÑO_COMPLETO, "f_mes_todos")
             ultimo_m = NOMBRE_MES[meses_del_anio[-1]]
-            frase = (f"Todos los años ({anios[0]}–{anios[-1]}) · una columna por año. "
-                     f"{anios[-1]} va hasta {ultimo_m}" if meses_del_anio[-1] < 12 else
-                     f"Todos los años ({anios[0]}–{anios[-1]}) · una columna por año")
+            if mes_txt == AÑO_COMPLETO:
+                frase = (f"Todos los años ({anios[0]}–{anios[-1]}) · una columna por año. "
+                         f"{anios[-1]} va hasta {ultimo_m}" if meses_del_anio[-1] < 12 else
+                         f"Todos los años ({anios[0]}–{anios[-1]}) · una columna por año")
+            else:
+                frase = f"{mes_txt} de cada año · una columna por año, para ver cómo se comporta ese mes en el tiempo"
         else:
             opciones_mes = [AÑO_COMPLETO] + [NOMBRE_MES[m] for m in meses_del_anio]
             # Año en curso: abre en el último mes. Años anteriores: abre en el año completo.
@@ -364,9 +370,14 @@ if df.empty:
 #   Año completo: los meses del año contra los mismos meses del año anterior
 # ---------------------------------------------------------------
 anual = mes_txt == AÑO_COMPLETO
-if todos:
+if todos and anual:
     seleccion = list(periodos)          # todos los meses de todos los años
     mes = seleccion[-1]
+elif todos:
+    n_mes_todos = [k for k, v in NOMBRE_MES.items() if v == mes_txt][0]
+    seleccion = [p for p in periodos if p % 100 == n_mes_todos]   # ese mes en cada año
+    mes = seleccion[-1]
+    anio = mes // 100
 elif anual:
     seleccion = [p for p in periodos if p // 100 == anio]
     mes = seleccion[-1]
@@ -381,7 +392,8 @@ acum_ant = [mover(p, -12) for p in acum]
 ult12 = [mover(mes, -k) for k in range(1, 13)]
 anio_ant_completo = [anio * 100 - 100 + m for m in range(1, 13)]
 rango_meses = "" if num_mes == 12 else f" (Ene–{NOMBRE_MES[num_mes]})"
-etq_sel = (f"Todos los años {anios[0]}–{anios[-1]}" if todos else
+etq_sel = (f"Todos los años {anios[0]}–{anios[-1]}" if todos and anual else
+           f"{mes_txt} de todos los años" if todos else
            f"Año {anio}{rango_meses}" if anual else etiqueta(mes))
 etq_acum, etq_acum_ant = f"Ene–{NOMBRE_MES[num_mes]} {anio}", f"Ene–{NOMBRE_MES[num_mes]} {anio - 1}"
 
@@ -391,10 +403,22 @@ def suma(d, lista):
 
 
 # Columnas de comparación que usan las tablas, según se mire un mes, un año o todos los años
-anios_completos = [a for a in anios if any(p // 100 == a and p % 100 == 12 for p in periodos)]
-if todos:
+anios_completos = [a for a in anios if len({p for p in periodos if p // 100 == a}) == 12]
+
+
+def etq_anio(a):
+    """'2025' si el año tiene los 12 meses; si no, con su tramo real: '2026 (Ene–Sep)', '2016 (Mar–Dic)'."""
+    m = sorted(p % 100 for p in periodos if p // 100 == a)
+    return str(a) if len(m) == 12 or not m else f"{a} ({NOMBRE_MES[m[0]]}–{NOMBRE_MES[m[-1]]})"
+if todos and not anual:
+    # Un mes en cada año: una columna por año; la variación, el último contra el anterior
+    COLUMNAS = [(etiqueta(p), [p]) for p in seleccion]
+    PARTICIPACION = {}
+    VARIACIONES = ([(len(COLUMNAS) - 1, len(COLUMNAS) - 2,
+                     f"Var {etiqueta(seleccion[-1])} vs {etiqueta(seleccion[-2])}")] if len(COLUMNAS) >= 2 else [])
+elif todos:
     COLUMNAS = [(f"Total {anios[0]}–{anios[-1]}", seleccion)] + \
-               [(str(a) + ("" if a in anios_completos else rango_meses), [p for p in periodos if p // 100 == a])
+               [(etq_anio(a), [p for p in periodos if p // 100 == a])
                 for a in anios]
     PARTICIPACION = {0: "% del total"}
     # Variación entre los dos últimos años COMPLETOS (el año en curso va incompleto)
@@ -443,7 +467,7 @@ def tabla_comparativa(d, llaves, orden=None, subtotales=None):
             if i in PARTICIPACION:
                 registro[PARTICIPACION[i]] = fila[nombre] / total[nombre] if total[nombre] else None
             for a, b, nombre_var in VARIACIONES:
-                if b == i:
+                if max(a, b) == i:   # la variación va después de la última de las dos columnas
                     registro[nombre_var] = variacion(fila[COLUMNAS[a][0]], fila[COLUMNAS[b][0]])
         salida.append(registro)
     t = pd.DataFrame(salida)
@@ -503,7 +527,16 @@ pest = st.tabs(["Resumen", "Tabla mensual", "Costo unitario", "Gerentes", "Inter
 with pest[0]:
     k = st.columns(4)
     # delta_color="inverse": si el gasto SUBE se muestra en rojo
-    if todos:
+    if todos and not anual:
+        por_p = df[df["periodo"].isin(seleccion)].groupby("periodo")["valor"].sum().reindex(seleccion).fillna(0)
+        previo = por_p.iloc[-2] if len(por_p) >= 2 else None
+        k[0].metric(etiqueta(mes), millones(por_p.iloc[-1]),
+                    f"{porcentaje(variacion(por_p.iloc[-1], previo))} vs {etiqueta(seleccion[-2])}"
+                    if previo else None, delta_color="inverse")
+        k[1].metric(f"Promedio de {mes_txt} ({len(por_p)} años)", millones(por_p.mean()))
+        k[2].metric(f"Mayor: {etiqueta(por_p.idxmax())}", millones(por_p.max()))
+        k[3].metric(f"Menor: {etiqueta(por_p.idxmin())}", millones(por_p.min()))
+    elif todos:
         por_anio = df.groupby(df["periodo"] // 100)["valor"].sum()
         k[0].metric(f"Gasto total {anios[0]}–{anios[-1]}", millones(por_anio.sum()))
         if len(anios_completos) >= 2:
