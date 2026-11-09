@@ -105,9 +105,11 @@ st.markdown(f"""
   .st-key-barra_filtros label p {{ font-size:0.74rem !important; font-weight:700 !important;
                                    text-transform:uppercase; letter-spacing:0.6px; color:#5B6B5E !important; }}
   .st-key-barra_filtros [data-testid="stButtonGroup"] button {{ border-radius:999px; }}
+  .st-key-barra_filtros [data-testid="stButtonGroup"] button[aria-pressed="true"],
   .st-key-barra_filtros [data-testid="stButtonGroup"] button[aria-checked="true"],
   .st-key-barra_filtros [data-testid="stButtonGroup"] button[kind$="Active"] {{
         background:{VERDE} !important; border-color:{VERDE} !important; color:#fff !important; }}
+  .st-key-barra_filtros [data-testid="stButtonGroup"] button[aria-pressed="true"] p,
   .st-key-barra_filtros [data-testid="stButtonGroup"] button[aria-checked="true"] p,
   .st-key-barra_filtros [data-testid="stButtonGroup"] button[kind$="Active"] p {{ color:#fff !important; }}
 
