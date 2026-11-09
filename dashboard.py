@@ -905,19 +905,11 @@ with pest[2]:
                 with t_base:
                     pro = fi_l[fi_l["origen_divisor"] == "Propio de la regla"]
                     reglas = sorted(fi_l["regla_divisor"].unique())
-                    lotes_g = fi_l[fi_l["ubicacion"].isin(lotes_cu)].groupby("anio")["ubicacion"].nunique()
-                    arboles_censo = pro.groupby(["anio", "ubicacion"])["divisor"].max().groupby("anio").sum()
                     pct_pro = pro.groupby("anio")["valor"].sum() / gasto_anio
-                    cu_pond = ponderado(fi_l, None, "anio")
-                    filas_b = {
-                        "Gasto del año": gasto_anio.map(millones),
-                        "Árboles vivos de la finca (ARB_TOTAL)": arb_anio.reindex(gasto_anio.index).map(pesos),
-                        "Lotes con gasto": lotes_g.reindex(gasto_anio.index).fillna(0).astype(int).astype(str),
-                        "% del gasto cargado a lotes con censo": pct_pro.reindex(gasto_anio.index).fillna(0)
-                            .map(lambda v: f"{v:.0%}"),
-                        "Árboles del censo de esos lotes": arboles_censo.reindex(gasto_anio.index).map(pesos),
-                        "Costo unitario ponderado (Power BI)": cu_pond.reindex(gasto_anio.index).map(unitario),
-                    }
+                    # Una sola fila: la base con la que se divide cada año (más fácil de leer)
+                    nombre_base = (f"Árboles del censo de {', '.join(lote_f) if len(lote_f) <= 4 else str(len(lote_f)) + ' lotes'}"
+                                   if lote_f else "Árboles vivos de la finca (ARB_TOTAL)")
+                    filas_b = {nombre_base: arboles_base.reindex(gasto_anio.index).map(pesos)}
                     tabla_b = pd.DataFrame(filas_b).T
                     tabla_b.columns = [str(int(c)) for c in tabla_b.columns]
                     st.dataframe(tabla_b.fillna("—").reset_index().rename(columns={"index": "Concepto"}),
