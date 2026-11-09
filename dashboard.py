@@ -75,12 +75,14 @@ st.markdown(f"""
   /* Encabezado */
   .enc {{ display:flex; align-items:center; gap:1rem; padding:0.9rem 1.3rem; border-radius:14px;
           background: linear-gradient(120deg, #0F3D1F 0%, {VERDE} 70%, #2E7D32 100%); color:#fff; }}
-  .enc img {{ height:62px; background:#fff; border-radius:10px; padding:6px 10px; }}
+  .enc .logos {{ display:flex; align-items:center; gap:10px; background:#fff; border-radius:12px; padding:7px 12px; }}
+  .enc .logos img {{ height:60px; width:auto; display:block; }}
+  .enc .logos .sep {{ width:1px; height:48px; background:#D1D5DB; }}
   .enc .tit {{ font-size:1.55rem; font-weight:700; line-height:1.15; letter-spacing:0.2px; }}
   .enc .sub {{ font-size:0.92rem; opacity:0.88; margin-top:2px; }}
   @media (max-width: 640px) {{
     .enc {{ flex-direction:column; align-items:flex-start; gap:0.5rem; }}
-    .enc img {{ height:38px; }}
+    .enc .logos img {{ height:40px; }}
     .enc .tit {{ font-size:1.2rem; }}
   }}
   .enc .chip {{ display:inline-block; padding:2px 10px; border-radius:999px; font-size:0.78rem;
@@ -504,13 +506,20 @@ titulo_vista = "Grupo AGROCACAY + KAHAI" if vista == GRUPO else vista
 
 
 def _logo_html():
+    """Logo de la empresa elegida (en alta resolución); en Grupo, los dos."""
     import base64
-    ruta = os.path.join(C.CARPETA_APP, "logo_kahai_recortado.png")   # sin márgenes: se ve más grande y nítido
-    if not os.path.exists(ruta):
-        ruta = os.path.join(C.CARPETA_APP, "logo_kahai.png")
-    if not os.path.exists(ruta):
-        return ""
-    return f'<img src="data:image/png;base64,{base64.b64encode(open(ruta, "rb").read()).decode()}">'
+
+    def img(nombre):
+        ruta = os.path.join(C.CARPETA_APP, nombre)
+        if not os.path.exists(ruta):
+            return ""
+        return f'<img src="data:image/png;base64,{base64.b64encode(open(ruta, "rb").read()).decode()}" alt="">'
+    archivos = {"AGROCACAY": ["logo_agrocacay.png"], "KAHAI": ["logo_kahai_solo.png"]}.get(
+        vista, ["logo_agrocacay.png", "logo_kahai_solo.png"])
+    imgs = [img(a) for a in archivos if img(a)]
+    if not imgs:   # respaldo: el logo combinado anterior
+        imgs = [img("logo_kahai_recortado.png") or img("logo_kahai.png")]
+    return '<div class="logos">' + '<span class="sep"></span>'.join(imgs) + "</div>"
 
 
 with encabezado:
