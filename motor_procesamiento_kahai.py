@@ -43,7 +43,9 @@ def leer(ruta=None):
 
     reg = hojas["REGLAS"].dropna(subset=["LINEA", "DIVISOR"]).copy()
     reg.columns = [c.lower() for c in reg.columns]
-    for c in ["seccion", "linea", "ceco", "rubro", "detalle", "divisor"]:
+    if "descripcion" not in reg.columns:          # columna opcional (versiones viejas del Excel)
+        reg["descripcion"] = "*"
+    for c in ["seccion", "linea", "ceco", "rubro", "detalle", "descripcion", "divisor"]:
         reg[c] = reg[c].fillna("*").astype(str).str.strip()
     reg["divisor"] = reg["divisor"].str.upper()
     reg["orden"] = range(1, len(reg) + 1)

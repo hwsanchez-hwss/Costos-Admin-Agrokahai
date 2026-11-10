@@ -810,9 +810,24 @@ def mostrar_procesamiento_kahai():
         return pd.Series(True, index=serie.index) if patron.strip() == "*" else \
             serie.fillna("").str.strip().str.lower() == patron.strip().lower()
 
+    import unicodedata
+
+    def sin_tildes(t):
+        return "".join(ch for ch in unicodedata.normalize("NFD", str(t).lower()) if unicodedata.category(ch) != "Mn")
+
+    def cumple_descripcion(serie, patron):
+        """'*' = todas; 'texto' = la descripción contiene ese texto; '!texto' = NO lo contiene."""
+        patron = str(patron if patron is not None and str(patron) != "nan" else "*").strip()
+        if patron in ("", "*"):
+            return pd.Series(True, index=serie.index)
+        negar = patron.startswith("!")
+        contiene = serie.fillna("").map(sin_tildes).str.contains(sin_tildes(patron.lstrip("!").strip()), regex=False)
+        return ~contiene if negar else contiene
+
     lineas = []
     for _, r in reg.iterrows():
-        m = coincide(k["ceco"], r["ceco"]) & coincide(k["rubro"], r["rubro"]) & coincide(k["detalle"], r["detalle"])
+        m = coincide(k["ceco"], r["ceco"]) & coincide(k["rubro"], r["rubro"]) & coincide(k["detalle"], r["detalle"]) & \
+            cumple_descripcion(k["descripcion"], r.get("descripcion", "*"))
         sub = k[m]
         costo = sub.groupby("anio")["valor"].sum()
         mo = sub[sub["bloque"].isin(["Mano de obra (nómina)", "Mano de obra al contrato"])].groupby("anio")["valor"].sum()
