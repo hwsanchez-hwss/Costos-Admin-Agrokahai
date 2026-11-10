@@ -1016,42 +1016,118 @@ def mostrar_lotes_aceite(a_ref, kg):
         for _, r in lt[lt["anio"] == a].iterrows():
             filas.append(fila_html(r["lote"], resumen(lt[lt["orden"] == r["orden"]])))
         filas.append(fila_html(f"Total {a}", res[a], " class='tot'"))
-    # ---- Gráfica de rendimientos (por año o por lote de aceite)
-    modo = st.segmented_control("Ver rendimientos", ["Por año", "Por lote de aceite"], default="Por año",
-                                key="kla_modo") or "Por año"
-    if modo == "Por año":
-        xs = [str(a) for a in anios_l]
-        puntos = [res[a] for a in anios_l]
-    else:
-        lt_g = lt.sort_values("orden")
-        xs = lt_g["lote"].astype(str).tolist()
-        puntos = [resumen(lt[lt["orden"] == o]) for o in lt_g["orden"]]
-    fig = go.Figure()
-    for clave, nombre, color, guion in [("p_pelado", "Pelado (pelada ÷ testa)", "#2a78d6", "solid"),
-                                         ("p_blanca", "Nuez blanca (÷ pelada)", "#1baf7a", "solid"),
-                                         ("p_aceite", "Rendimiento aceite (÷ nuez p/aceite)", "#eb6834", "solid"),
-                                         ("p_hongo", "Hongo (÷ pelada)", "#9CA3AF", "dot")]:
-        ys = [p[clave] for p in puntos]
-        fig.add_scatter(x=xs, y=ys, name=nombre, mode="lines+markers" + ("+text" if clave == "p_aceite" else ""),
-                        connectgaps=False, line=dict(width=2.5 if clave == "p_aceite" else 2, color=color, dash=guion),
-                        text=[f"{v * 100:.0f}%" if v is not None else "" for v in ys] if clave == "p_aceite" else None,
-                        textposition="bottom center", textfont=dict(color=color, size=11),
-                        hovertemplate=nombre + "<br>%{x}: %{y:.1%}<extra></extra>")
-    if modo == "Por año":   # años donde el aceite y su nuez quedaron en lotes distintos: el % no es comparable
-        for a in anios_l:
-            d_a = lt[lt["anio"] == a]
-            if ((d_a["nuez_aceite"] > 0) & d_a["aceite"].isna()).any() and res[a]["p_aceite"]:
-                fig.add_annotation(x=anios_l.index(a), y=res[a]["p_aceite"], text="aceite y nuez<br>en lotes distintos",
-                                   showarrow=True, arrowhead=0, ay=-38, font=dict(size=10, color="#9A5B00"))
-    fig.update_layout(height=380, separators=",.", title="Rendimientos de la nuez al aceite · KAHAI",
-                      legend=dict(orientation="h", y=1.15, x=0), margin=dict(l=10, r=10, t=80, b=10),
-                      plot_bgcolor="rgba(0,0,0,0)",
-                      yaxis=dict(tickformat=".0%", range=[0, 1.02], gridcolor="rgba(128,128,128,0.2)"),
-                      xaxis=dict(type="category"))
-    st.plotly_chart(fig, width="stretch")
+    # ---- Balance de masa: de cada 100 kg de nuez testa, ¿cuánto termina en aceite y a dónde va el resto?
+    def balance(a):
+        d = lt[lt["anio"] == a]
+        T = d.loc[d["nuez_testa"] > 0, "nuez_testa"].sum()
+        P = d.loc[d["nuez_testa"] > 0, "nuez_pelada"].sum()
+        N, A = d["nuez_aceite"].sum(), d["aceite"].sum()
+        if not T:
+            return None
+        par = not (((d["nuez_aceite"] > 0) & d["aceite"].isna()).any() or (d["nuez_aceite"].isna() & (d["aceite"] > 0)).any())
+        return {"T": T, "P": P, "N": N, "A": A, "par": par,
+                "aceite": A / T * 100, "torta": max(N - A, 0) / T * 100,
+                "apartada": max(P - N, 0) / T * 100, "testa": max(T - P, 0) / T * 100,
+                "pelada": P / T * 100, "nuez_ac": N / T * 100}
+    bal = {a: balance(a) for a in anios_l if balance(a)}
+    ACEITE, TORTA, APARTADA, TESTA = "#E8A33D", "#C9B79C", "#9CA3AF", "#7B5B45"
+    capa = dict(separators=",.", plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)")
 
-    st.markdown(f"<div class='tpk'><table><thead>{cab}</thead><tbody>{''.join(filas)}</tbody></table></div>",
-                unsafe_allow_html=True)
+    st.markdown("##### De cada 100 kg de nuez testa…")
+    izq, der = st.columns([1, 1.35], gap="large")
+    with izq:
+        anios_b = list(bal)
+        a_f = st.segmented_control("Año", anios_b, default=a_k if a_k in bal else anios_b[-1], key="kla_anio",
+                                   format_func=str, label_visibility="collapsed") or anios_b[-1]
+        b = bal[a_f]
+        fig = go.Figure(go.Funnel(
+            y=["Nuez testa", "Nuez pelada", "Nuez para aceite", "Aceite"],
+            x=[100, b["pelada"], b["nuez_ac"], b["aceite"]],
+            customdata=[b["T"], b["P"], b["N"], b["A"]],
+            texttemplate="<b>%{value:.0f} kg</b><br>%{percentPrevious:.0%} del paso anterior",
+            textposition=["inside", "inside", "inside", "outside"],
+            textfont=dict(size=13, color=["white", "white", "white", "#7A4F00"]),
+            marker=dict(color=["#7B5B45", "#A07850", "#C99A55", ACEITE]),
+            connector=dict(fillcolor="rgba(201,154,85,0.18)", line=dict(width=0)),
+            hovertemplate="%{y}: %{customdata:,.0f} kg reales<extra></extra>"))
+        fig.update_layout(height=330, margin=dict(l=10, r=10, t=10, b=10), showlegend=False,
+                          yaxis=dict(tickfont=dict(size=13)), **capa)
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        st.markdown(f"<div style='text-align:center;margin-top:-6px;font-size:0.95rem'>En <b>{a_f}</b> se necesitaron "
+                    f"<b>{b['T'] / b['A']:,.1f} kg</b> de nuez testa por cada kg de aceite".replace(".", ",")
+                    + ("" if b["par"] else " <span style='color:#9A5B00'>(*año con aceite y nuez en lotes distintos)</span>")
+                    + "</div>", unsafe_allow_html=True)
+    with der:
+        anios_o = list(reversed(list(bal)))              # el más reciente arriba
+        etq = [f"{a}" + ("" if bal[a]["par"] else " *") for a in anios_o]
+        fig = go.Figure()
+        for clave, nombre, color, txt_color in [("aceite", "Aceite", ACEITE, "#3B2A00"),
+                                                 ("torta", "Torta (lo que queda al extraer)", TORTA, "#3B2F22"),
+                                                 ("apartada", "Nuez roja/hongo no usada", APARTADA, "white"),
+                                                 ("testa", "Testa retirada al pelar", TESTA, "white")]:
+            vals = [bal[a][clave] for a in anios_o]
+            fig.add_bar(y=etq, x=vals, name=nombre, orientation="h", marker_color=color,
+                        text=[f"{v:.0f}" if v >= 4 else "" for v in vals], textposition="inside",
+                        insidetextanchor="middle", textfont=dict(color=txt_color, size=13),
+                        hovertemplate=nombre + " · %{y}: %{x:.1f} kg de cada 100<extra></extra>")
+        fig.update_layout(barmode="stack", height=360, bargap=0.28, margin=dict(l=10, r=10, t=40, b=10),
+                          title=dict(text="¿A dónde va cada 100 kg de nuez testa?", font=dict(size=15)),
+                          legend=dict(orientation="h", y=-0.08, x=0, traceorder="normal"),
+                          xaxis=dict(range=[0, 100], ticksuffix=" kg", gridcolor="rgba(128,128,128,0.15)"),
+                          yaxis=dict(type="category", tickfont=dict(size=13)), **capa)
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        if not all(bal[a]["par"] for a in bal):
+            st.caption("\\* Año con aceite y nuez en lotes distintos (ej. KNO034 sin aceite y KNO035 solo aceite): "
+                       "su reparto no es comparable.")
+
+    # ---- Lectura automática del año elegido
+    a_ant = max([a for a in bal if a < a_f and bal[a]["par"]], default=None)   # se salta años no comparables (2024)
+    if a_ant:
+        b0 = bal[a_ant]
+        def cambio(v, v0, nombre):
+            d = v - v0
+            return f"{nombre} **{v:.0f} kg** ({'+' if d >= 0 else ''}{d:.0f} vs {a_ant})"
+        st.markdown("📌 **Lectura " + str(a_f) + ":** de cada 100 kg de nuez testa salieron " + cambio(b["aceite"], b0["aceite"], "aceite")
+                    + "; se apartaron " + cambio(b["apartada"], b0["apartada"], "nuez roja/hongo")
+                    + " y la testa retirada fue " + cambio(b["testa"], b0["testa"], "") .strip() + ".")
+
+    # ---- Rendimiento de aceite de cada lote KNO frente al promedio
+    lt_g = lt.sort_values("orden").copy()
+    lt_g["r"] = [div_(a_, n_) for a_, n_ in zip(lt_g["aceite"], lt_g["nuez_aceite"])]
+    rs = [None if pd.isna(r) else float(r) for r in lt_g["r"]]      # pandas guarda None como NaN
+    con_par = lt_g[lt_g["r"].notna()]
+    prom = div_(con_par["aceite"].sum(), con_par["nuez_aceite"].sum())
+
+    def color_r(r):
+        if r is None:
+            return "#D1D5DB"
+        return "#1baf7a" if r >= prom - 0.02 else ("#eda100" if r >= prom - 0.07 else "#e34948")
+    xs = [lt_g["anio"].astype(str).tolist(), lt_g["lote"].astype(str).tolist()]
+    ys = [r if r is not None else 0.012 for r in rs]   # sin pareja nuez-aceite: barrita gris con aviso
+    textos = []
+    for r, na, ac in zip(rs, lt_g["nuez_aceite"], lt_g["aceite"]):
+        textos.append(f"<b>{r * 100:.0f}%</b>" if r is not None else ("sin aceite" if pd.notna(na) else "solo aceite"))
+    fig = go.Figure()
+    fig.add_bar(x=xs, y=ys, marker_color=[color_r(r) for r in rs], text=textos, textposition="outside",
+                textfont=dict(size=12), cliponaxis=False,
+                customdata=list(zip(lt_g["nuez_aceite"].fillna(0), lt_g["aceite"].fillna(0))),
+                hovertemplate="%{x}<br>Nuez para aceite: %{customdata[0]:,.0f} kg<br>Aceite: %{customdata[1]:,.0f} kg"
+                              "<br>Rendimiento: %{y:.1%}<extra></extra>")
+    if prom:
+        fig.add_hline(y=prom, line=dict(color="#374151", dash="dash", width=1.5), layer="below")
+    fig.update_layout(height=360, margin=dict(l=10, r=10, t=50, b=10), showlegend=False, bargap=0.35,
+                      title=dict(text=f"Rendimiento de aceite por lote KNO (aceite ÷ nuez para aceite) · línea punteada = "
+                                      f"promedio {prom * 100:.0f}%" if prom else "Rendimiento de aceite por lote KNO",
+                                 font=dict(size=15)),
+                      yaxis=dict(tickformat=".0%", range=[0, max(ys + [prom or 0]) * 1.22], layer="below traces",
+                                 gridcolor="rgba(128,128,128,0.15)"), **capa)
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    st.caption("🟢 en o sobre el promedio · 🟠 hasta 7 puntos por debajo · 🔴 más de 7 puntos por debajo. "
+               "Los lotes que terminan en H o R se hicieron con nuez de hongo o roja.")
+
+    with st.expander("📋 Tabla por lote de aceite (kg y %)"):
+        st.markdown(f"<div class='tpk'><table><thead>{cab}</thead><tbody>{''.join(filas)}</tbody></table></div>",
+                    unsafe_allow_html=True)
 
     # ---- Avisos: lotes incompletos y cuadre con la hoja DIVISORES
     avisos = []
