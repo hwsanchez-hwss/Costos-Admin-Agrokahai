@@ -138,3 +138,6 @@ COLOR_EMPRESA = {"AGROCACAY": "#2a78d6", "KAHAI": "#eb6834"}
 # igual que hoy. El motor solo las LEE.
 ARCHIVO_REFERENCIAS_CU = os.path.join(CARPETA_EXCEL, "Graficas", "Ana_Costos_AGRO.xlsx")
 EMPRESAS_COSTO_UNITARIO = ["AGROCACAY"]
+
+# Divisores de procesamiento de KAHAI (kg por año: concha, nuez, aceite) y qué costo va con cada uno
+ARCHIVO_PRODUCCION_KAHAI = os.path.join(CARPETA_EXCEL, "Graficas", "PRODUCCION_KAHAI.xlsx")

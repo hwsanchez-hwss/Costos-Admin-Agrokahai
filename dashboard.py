@@ -789,10 +789,121 @@ def componente_gerencial(d):
     return comp
 
 
+def mostrar_procesamiento_kahai():
+    """Costo por kg de la planta de KAHAI: costo del año ÷ kg del divisor (Graficas\\PRODUCCION_KAHAI.xlsx)."""
+    import html as _h
+    div = F.leer_tabla("kahai_divisores")
+    reg = F.leer_tabla("kahai_reglas_proc", "ORDER BY orden")
+    st.subheader("🏭 Procesamiento KAHAI · costo por kg")
+    if div.empty or reg.empty:
+        st.info("Faltan los divisores de procesamiento. Llene Graficas\\PRODUCCION_KAHAI.xlsx y corra:  "
+                "python motor_procesamiento_kahai.py")
+        return
+    k = datos[(datos["empresa"] == "KAHAI") & datos["naturaleza"].isin(naturalezas) & datos["tipo"].isin(tipos)].copy()
+    k["anio"] = k["periodo"] // 100
+    k["bloque"] = clasificar_bloque(k)
+    anios_p = sorted(div["anio"].astype(int).unique())
+    kg = div.assign(anio=div["anio"].astype(int)).set_index(["divisor", "anio"])["kg"]
+    ult_mes_k = int(k.loc[k["anio"] == anios_p[-1], "periodo"].max() % 100) if (k["anio"] == anios_p[-1]).any() else 12
+
+    def coincide(serie, patron):
+        return pd.Series(True, index=serie.index) if patron.strip() == "*" else \
+            serie.fillna("").str.strip().str.lower() == patron.strip().lower()
+
+    lineas = []
+    for _, r in reg.iterrows():
+        m = coincide(k["ceco"], r["ceco"]) & coincide(k["rubro"], r["rubro"]) & coincide(k["detalle"], r["detalle"])
+        sub = k[m]
+        costo = sub.groupby("anio")["valor"].sum()
+        mo = sub[sub["bloque"].isin(["Mano de obra (nómina)", "Mano de obra al contrato"])].groupby("anio")["valor"].sum()
+        lineas.append({"seccion": r["seccion"], "linea": r["linea"], "divisor": r["divisor"],
+                       "costo": costo, "mo": mo})
+
+    def cpk(costo, divisor, a):
+        kg_a = kg.get((divisor, a))
+        c = costo.get(a, 0)
+        return (c / kg_a) if kg_a else None, c, kg_a
+
+    # ---- Tarjetas: el año elegido arriba (o el último con divisores)
+    a_ref = anio if anio in anios_p else anios_p[-1]
+    def total_seccion(sec, a):
+        vals = [cpk(l["costo"], l["divisor"], a)[0] for l in lineas if l["seccion"] == sec]
+        vals = [v for v in vals if v is not None]
+        return sum(vals) if vals else None
+    def primera(sec, a):
+        l = next((l for l in lineas if l["seccion"] == sec), None)
+        return cpk(l["costo"], l["divisor"], a)[0] if l else None
+    t1, t2, t3, t4 = st.columns(4)
+    for col, nombre, f in [(t1, "Concha procesada", lambda a: primera("Poscosecha", a)),
+                           (t2, "Nuez pelada", lambda a: primera("Nuez", a)),
+                           (t3, "Aceite (suma de etapas)", lambda a: total_seccion("Aceite", a))]:
+        v, v0 = f(a_ref), f(a_ref - 1)
+        col.metric(f"{nombre} {a_ref} · $/kg", unitario(v),
+                   f"{porcentaje(variacion(v, v0))} vs {a_ref - 1}" if v and v0 else None, delta_color="inverse")
+    t4.metric(f"Kg aceite filtrado {a_ref}", pesos(kg.get(("FILTRADO", a_ref))))
+    if a_ref == anios_p[-1] and ult_mes_k < 12:
+        st.caption(f"⚠️ El costo de {a_ref} va hasta {NOMBRE_MES[ult_mes_k]}; revise que los kg de {a_ref} "
+                   "correspondan al mismo tramo.")
+
+    # ---- Tabla: $/kg grande y, debajo, costo ÷ kg
+    def etq_a(a):
+        return f"{a} (Ene–{NOMBRE_MES[ult_mes_k]})" if a == anios_p[-1] and ult_mes_k < 12 else str(a)
+    cab = "<tr><th class='izq'>Línea</th><th class='izq'>Divisor</th>" + "".join(
+        f"<th class='anio'>{etq_a(a)}</th>" for a in anios_p) + "</tr>"
+    filas, sec_actual = [], None
+    for l in lineas:
+        if l["seccion"] != sec_actual:
+            sec_actual = l["seccion"]
+            filas.append(f"<tr class='sec'><td colspan='{2 + len(anios_p)}'>{_h.escape(sec_actual)}</td></tr>")
+        celdas = []
+        for a in anios_p:
+            v, c, kg_a = cpk(l["costo"], l["divisor"], a)
+            det = f"{millones(c)} ÷ {pesos(kg_a)} kg" if kg_a else "sin kg"
+            celdas.append(f"<td>{pesos(v) if v is not None else '—'}<div class='det'>{det}</div></td>")
+        filas.append(f"<tr><td class='izq'>{_h.escape(l['linea'])}</td><td class='izq div'>{_h.escape(l['divisor'])}</td>"
+                     + "".join(celdas) + "</tr>")
+        siguiente = lineas[lineas.index(l) + 1]["seccion"] if lineas.index(l) + 1 < len(lineas) else None
+        n_sec = sum(1 for x in lineas if x["seccion"] == sec_actual)
+        if siguiente != sec_actual and n_sec > 1 and sec_actual.lower().startswith("aceite"):
+            tot = [total_seccion(sec_actual, a) for a in anios_p]
+            filas.append(f"<tr class='tot'><td class='izq' colspan='2'>Costo kg aceite (suma)</td>"
+                         + "".join(f"<td>{pesos(v) if v else '—'}</td>" for v in tot) + "</tr>")
+    st.markdown("""<style>
+      .tpk { overflow-x:auto; border:1px solid #E5E7EB; border-radius:10px; }
+      .tpk table { border-collapse:collapse; width:100%; font-size:0.86rem; font-variant-numeric:tabular-nums; }
+      .tpk th { background:#F6F8F5; color:#374151; font-weight:600; padding:0.5rem 0.6rem; border-bottom:1px solid #E1E8DF;
+                white-space:nowrap; }
+      .tpk th.anio { text-align:center; } .tpk .izq { text-align:left; }
+      .tpk td { text-align:right; padding:0.4rem 0.6rem; border-bottom:1px solid #F0F2F0; white-space:nowrap;
+                font-weight:600; color:#111827; }
+      .tpk td.izq { font-weight:500; } .tpk td.div { color:#6B7280; font-size:0.78rem; font-weight:400; }
+      .tpk .det { font-size:0.72rem; font-weight:400; color:#6B7280; }
+      .tpk tr.sec td { text-align:left; background:#EEF4EE; color:#1B5E20; font-weight:700; padding:0.35rem 0.6rem; }
+      .tpk tr.tot td { border-top:2px solid #CBD5CC; background:#FAFBFA; font-weight:800; }
+    </style>""", unsafe_allow_html=True)
+    st.markdown(f"<div class='tpk'><table><thead>{cab}</thead><tbody>{''.join(filas)}</tbody></table></div>",
+                unsafe_allow_html=True)
+    st.caption("Pesos por kg = costo del año en CONSOLIDADO_KAHAI (aprobado, con los filtros de arriba) ÷ kg del divisor "
+               "(Graficas\\PRODUCCION_KAHAI.xlsx). Debajo de cada valor: costo ÷ kg. La energía no está en el "
+               "consolidado, así que no se incluye.")
+
+    with st.expander("👷 Mano de obra y otros costos por línea ($/kg)"):
+        filas_mo = []
+        for l in lineas:
+            for nombre, serie in [("Mano de obra", l["mo"]), ("Otros costos", l["costo"].sub(l["mo"], fill_value=0))]:
+                fila = {"Línea": l["linea"], "Parte": nombre}
+                for a in anios_p:
+                    kg_a = kg.get((l["divisor"], a))
+                    fila[etq_a(a)] = pesos(serie.get(a, 0) / kg_a) if kg_a else "—"
+                filas_mo.append(fila)
+        st.dataframe(pd.DataFrame(filas_mo), hide_index=True, width="stretch")
+        st.caption("Mano de obra = nómina (actividades KV_) + mano de obra al contrato. Otros = facturas de terceros "
+                   "(insumos, servicios, empaques…).")
+
+
 with pest[2]:
     if vista == "KAHAI":
-        st.info("Por ahora el costo unitario se calcula solo para la parte agrícola (AGROCACAY). "
-                "Elija AGROCACAY en la barra lateral.")
+        mostrar_procesamiento_kahai()
     else:
         datos_cu, ultimo_cu = cargar_cu(VERSION_DATOS)
         if datos_cu.empty:

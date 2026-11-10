@@ -67,6 +67,14 @@ Ver el dashboard
   Por defecto muestra Operativo + Intercompañía (Financiero e Inversión se
   activan en la barra lateral).
 
+Procesamiento KAHAI (costo por kg de concha, nuez y aceite)
+-----------------------------------------------------------
+  - Los kg por año y qué costo va con cada uno están en Graficas\PRODUCCION_KAHAI.xlsx
+    (hojas DIVISORES y REGLAS).
+  - Cada vez que se cambie ese Excel:  python motor_procesamiento_kahai.py
+    (guarda los divisores y los sube a la nube).
+  - Se ve en el dashboard: Empresa KAHAI -> pestaña Costo unitario.
+
 La app en la nube (para las personas autorizadas)
 -------------------------------------------------
   - Es el MISMO dashboard, publicado en Streamlit Cloud. Se entra con
