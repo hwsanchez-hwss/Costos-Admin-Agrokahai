@@ -1206,12 +1206,51 @@ with pest[2]:
                     t.index.name = nombre_c
                     return t.reset_index()
 
-                def html_tabla_cu(t, nombre_c):
-                    """Tabla ejecutiva en HTML: el año arriba y, en una segunda línea, su divisor (árboles vivos)."""
+                # Divisor que se muestra debajo de cada año: el de la REGLA de lo que hay en la tabla
+                # (Siembra -> sitios sembrados del año; MIAR, Nutrición -> censo de los lotes; Cosecha -> kg; etc.)
+                DIV_REGLA = {"SITIOS_SIEMBRA": ("🌱", "sitios sembrados en el año (hoja ARB_TOTAL, derecha)"),
+                             "CENSO": ("🌳", "árboles del censo de los lotes con gasto"),
+                             "PXN_KG": ("⚖️", "kg cosechados"),
+                             "SYRS_ARBOLES": ("🌱", "árboles sembrados/resembrados (SYRS)"),
+                             "ARB_TOTALVIVOS": ("🌳", "árboles vivos de la finca (ARB_TOTAL)")}
+
+                def regla_de(b):
+                    rr = {str(x).upper() for x in b["regla_divisor"].dropna().unique()}
+                    rr = {"ARB_TOTALVIVOS" if x in ("—", "ARB_TOTALVIVOS") else x for x in rr}
+                    return rr.pop() if len(rr) == 1 else None      # None = varias reglas mezcladas
+
+                def divisor_anio(b, a, regla):
+                    ba = b[b["anio"] == a]
+                    if ba.empty:
+                        return None, False
+                    if regla == "SITIOS_SIEMBRA":
+                        v = ba["sitios_siembra"].max()
+                    elif regla == "CENSO":
+                        v = ba[ba["censo"] > 0].groupby("ubicacion")["censo"].max().sum()
+                    elif regla == "SYRS_ARBOLES":
+                        v = ba[ba["syrs_arboles"] > 0].groupby("ubicacion")["syrs_arboles"].max().sum()
+                    elif regla == "PXN_KG":
+                        v = ba[ba["pxn_kg"] > 0].groupby(["mes", "ubicacion"])["pxn_kg"].max().sum()
+                    else:
+                        return arb_anio.get(a), False
+                    if v and v > 0:
+                        return v, False
+                    return arb_anio.get(a), True   # la regla no tiene su divisor ese año: respaldo árboles vivos
+
+                def html_tabla_cu(t, nombre_c, b=None):
+                    """Tabla ejecutiva en HTML: el año arriba y, en una segunda línea, el divisor de su regla."""
                     cols = [c for c in t.columns if c not in (nombre_c, "Gasto total", "% del gasto")]
+                    b = base if b is None else b
+                    regla = regla_de(b)
+                    icono = DIV_REGLA.get(regla, ("🌳", ""))[0]
                     def th_anio(c):
-                        if eje == "Año" and arb_anio.get(int(c)):
-                            return (f'<th class="anio">{c}<div class="sub">🌳 {pesos(arb_anio.get(int(c)))}</div></th>')
+                        if eje == "Año":
+                            v, resp = divisor_anio(b, int(c), regla) if regla else (arb_anio.get(int(c)), False)
+                            if v and resp:
+                                return (f'<th class="anio">{c}<div class="sub resp" title="Sin dato propio de la regla '
+                                        f'este año: se dividió por árboles vivos">🌳 {pesos(v)} *</div></th>')
+                            if v:
+                                return f'<th class="anio">{c}<div class="sub">{icono} {pesos(v)}</div></th>'
                         return f'<th class="anio">{c}</th>'
                     cab = (f'<tr><th class="izq">{_html.escape(nombre_c)}</th><th>Gasto total</th><th>% del gasto</th>'
                            + "".join(th_anio(c) for c in cols) + "</tr>")
@@ -1232,6 +1271,7 @@ with pest[2]:
                   .tcu th.anio { text-align:center; }
                   .tcu th .sub { display:table; margin:4px auto 0 auto; padding:1px 7px; border-radius:999px;
                                  background:#E8F1E8; color:#1B5E20; font-weight:700; font-size:0.72rem; }
+                  .tcu th .sub.resp { background:#FFF4E0; color:#9A5B00; }
                   .tcu td { text-align:right; padding:0.38rem 0.5rem; border-bottom:1px solid #F0F2F0; white-space:nowrap; }
                   .tcu .izq { text-align:left; white-space:normal; min-width:140px; max-width:220px; }
                   .tcu tbody tr:hover td { background:#F9FBF9; }
@@ -1254,8 +1294,20 @@ with pest[2]:
                               help="Por defecto se muestran los 15 de mayor gasto y el resto se junta en 'Otras'.")
                 pro_a = base[base["origen_divisor"] == "Propio de la regla"]
                 if eje == "Año":
-                    st.caption("Debajo de cada año: árboles vivos de la finca (hoja ARB_TOTAL), el divisor de lo que no está "
-                               "cargado a un lote. Lo cargado a un lote se divide por los árboles de ese lote en el censo.")
+                    regla_t = regla_de(base)
+                    if regla_t:
+                        resp_a = [int(a) for a in sorted(base["anio"].dropna().unique())
+                                  if divisor_anio(base, int(a), regla_t)[1]] if regla_t != "ARB_TOTALVIVOS" else []
+                        txt_resp = (f" ⚠️ **{', '.join(map(str, resp_a))}** (en naranja, con *): la hoja ARB_TOTAL aún no "
+                                    "tiene ese dato para el año, por eso el cálculo usó árboles vivos como respaldo. "
+                                    "Al completarlo, el costo se corrige solo.") if resp_a else ""
+                        st.caption(f"Debajo de cada año: el divisor de la regla **{regla_t}** — "
+                                   f"{DIV_REGLA.get(regla_t, ('', 'árboles vivos'))[1]}.{txt_resp}")
+                    else:
+                        reglas_t = ", ".join(sorted(str(x) for x in base["regla_divisor"].dropna().unique()))
+                        st.caption(f"Debajo de cada año: árboles vivos de la finca (ARB_TOTAL), solo como referencia. "
+                                   f"La tabla mezcla varias reglas ({reglas_t}); cada fila usa el divisor de la suya. "
+                                   "Elija un rubro para ver su divisor exacto.")
                     # Aviso automático cuando la base cambia mucho de un año a otro
                     serie = (pro_a.groupby("anio")["valor"].sum() / base.groupby("anio")["valor"].sum()).fillna(0)
                     serie = serie.reindex(sorted(base["anio"].dropna().unique())).fillna(0)
@@ -1276,7 +1328,7 @@ with pest[2]:
                     if mo_b.empty:
                         st.info("No hay mano de obra con estos filtros.")
                     else:
-                        st.markdown(html_tabla_cu(armar_tabla_cu(agrupar_resto(mo_b, por), por, ver), ver),
+                        st.markdown(html_tabla_cu(armar_tabla_cu(agrupar_resto(mo_b, por), por, ver), ver, mo_b),
                                     unsafe_allow_html=True)
                         st.caption("Nómina (jornales de la app de campo) + mano de obra al contrato.")
                 with st.expander(f"📦 Insumos, servicios y otros costos · {millones(ot_b['valor'].sum())} "
@@ -1285,7 +1337,7 @@ with pest[2]:
                         st.info("No hay insumos ni servicios con estos filtros.")
                     else:
                         st.markdown(html_tabla_cu(armar_tabla_cu(agrupar_resto(ot_b, "detalle"), "detalle", "Detalle"),
-                                                  "Detalle"),
+                                                  "Detalle", ot_b),
                                     unsafe_allow_html=True)
                         st.caption("Abierto por la columna DETALLE del Excel (insumos agrícolas, herramientas y equipos, "
                                    "servicios, combustible…).")
