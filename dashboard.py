@@ -765,10 +765,13 @@ def ponderado(d, por, eje):
         vDebito=("valor", "sum"), vDivisor=("divisor", "max")).reset_index()
     g["vCU"] = np.where((g["vDivisor"] == 0) | g["vDivisor"].isna(), np.nan, g["vDebito"] / g["vDivisor"])
     g["prod"] = g["vDebito"] * g["vCU"]
+    # Lo que no tiene divisor (ej. Siembra de un año sin sitios sembrados) no entra al promedio:
+    # así queda EN BLANCO y no como $0.
+    g["deb_ok"] = g["vDebito"].where(g["vCU"].notna())
     if not llaves:
-        tot = g["vDebito"].sum()
+        tot = g["deb_ok"].sum()
         return g["prod"].sum() / tot if tot else None
-    r = g.groupby(llaves).agg(prod=("prod", "sum"), deb=("vDebito", "sum"))
+    r = g.groupby(llaves).agg(prod=("prod", "sum"), deb=("deb_ok", "sum"))
     return (r["prod"] / r["deb"].replace(0, np.nan)).rename("cu")
 
 
@@ -1235,6 +1238,8 @@ with pest[2]:
                         return arb_anio.get(a), False
                     if v and v > 0:
                         return v, False
+                    if regla == "SITIOS_SIEMBRA":
+                        return None, True          # sin sitios sembrados: el costo queda en blanco
                     return arb_anio.get(a), True   # la regla no tiene su divisor ese año: respaldo árboles vivos
 
                 def html_tabla_cu(t, nombre_c, b=None):
@@ -1246,6 +1251,9 @@ with pest[2]:
                     def th_anio(c):
                         if eje == "Año":
                             v, resp = divisor_anio(b, int(c), regla) if regla else (arb_anio.get(int(c)), False)
+                            if resp and not v:
+                                return (f'<th class="anio">{c}<div class="sub resp" title="La hoja ARB_TOTAL no tiene '
+                                        f'sitios sembrados este año: el costo queda en blanco">🌱 sin dato</div></th>')
                             if v and resp:
                                 return (f'<th class="anio">{c}<div class="sub resp" title="Sin dato propio de la regla '
                                         f'este año: se dividió por árboles vivos">🌳 {pesos(v)} *</div></th>')
@@ -1298,9 +1306,16 @@ with pest[2]:
                     if regla_t:
                         resp_a = [int(a) for a in sorted(base["anio"].dropna().unique())
                                   if divisor_anio(base, int(a), regla_t)[1]] if regla_t != "ARB_TOTALVIVOS" else []
-                        txt_resp = (f" ⚠️ **{', '.join(map(str, resp_a))}** (en naranja, con *): la hoja ARB_TOTAL aún no "
-                                    "tiene ese dato para el año, por eso el cálculo usó árboles vivos como respaldo. "
-                                    "Al completarlo, el costo se corrige solo.") if resp_a else ""
+                        if resp_a and regla_t == "SITIOS_SIEMBRA":
+                            txt_resp = (f" ⚠️ **{', '.join(map(str, resp_a))}**: la hoja ARB_TOTAL aún no tiene sitios "
+                                        "sembrados para ese año, por eso el costo queda en blanco. Al registrarlos y "
+                                        "correr motor_costo_unitario.py, aparece solo.")
+                        elif resp_a:
+                            txt_resp = (f" ⚠️ **{', '.join(map(str, resp_a))}** (en naranja, con *): la hoja ARB_TOTAL aún no "
+                                        "tiene ese dato para el año, por eso el cálculo usó árboles vivos como respaldo. "
+                                        "Al completarlo, el costo se corrige solo.")
+                        else:
+                            txt_resp = ""
                         st.caption(f"Debajo de cada año: el divisor de la regla **{regla_t}** — "
                                    f"{DIV_REGLA.get(regla_t, ('', 'árboles vivos'))[1]}.{txt_resp}")
                     else:

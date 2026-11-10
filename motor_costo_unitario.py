@@ -16,6 +16,8 @@ Reglas (se leen de la hoja "⚙ CONFIG" del Excel, no están escritas aquí):
     Rubro sin regla -> ARB_TotalVivos
 
 Respaldo (igual que la fórmula del Excel):
+  - EXCEPCIÓN SIEMBRA: si no hay sitios sembrados para el año (SITIOS_SIEMBRA vacío o 0),
+    el costo unitario queda EN BLANCO (no se divide por los árboles vivos de la finca).
   - Si el divisor de la regla da 0 (no hay censo de ese lote ese año, no hubo
     cosecha ese mes en ese lote, etc.) se usa ARB_TotalVivos del año.
   - Si tampoco hay ARB_TotalVivos para el año, el costo unitario queda igual
@@ -152,6 +154,10 @@ def calcular(costos, ref):
     for _, f in d.iterrows():
         regla = str(f["regla_divisor"]).upper()
         valor = f[columna.get(regla, "arb_total_vivos")]
+        if regla == "SITIOS_SIEMBRA" and (valor is None or pd.isna(valor) or valor == 0):
+            divisores.append(None)           # sin sitios sembrados del año: costo unitario en blanco
+            origen.append("Sin sitios sembrados (CU en blanco)")
+            continue
         if valor == 0:                       # divisor propio en cero -> árboles vivos del año
             valor = f["arb_total_vivos"]
             origen.append("Respaldo: árboles vivos")
@@ -162,13 +168,15 @@ def calcular(costos, ref):
     d["origen_divisor"] = origen
 
     def cu(f):
+        if f["origen_divisor"] == "Sin sitios sembrados (CU en blanco)":
+            return None
         div = f["divisor"]
         debito = 0 if pd.isna(f["valor"]) else f["valor"]   # débito vacío cuenta como 0
         if div is None or pd.isna(div) or div == 0:
             return debito                   # igual que el Excel: sin divisor, CU = débito
         return debito / div
     d["costo_unitario"] = d.apply(cu, axis=1)
-    sin = d["divisor"].isna() | (d["divisor"] == 0)
+    sin = (d["divisor"].isna() | (d["divisor"] == 0)) & (d["origen_divisor"] != "Sin sitios sembrados (CU en blanco)")
     d.loc[sin, "origen_divisor"] = "Sin divisor (CU = débito)"
     return d
 
