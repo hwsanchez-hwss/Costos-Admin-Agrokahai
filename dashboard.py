@@ -905,6 +905,29 @@ def mostrar_procesamiento_kahai():
                "(Graficas\\PRODUCCION_KAHAI.xlsx). Debajo de cada valor: costo ÷ kg. La energía no está en el "
                "consolidado, así que no se incluye.")
 
+    # ---- Gráfica del costo por kg por año (una sección a la vez)
+    secciones = list(dict.fromkeys(l["seccion"] for l in lineas))
+    sec_g = st.segmented_control("Graficar", secciones, default=secciones[-1], key="kpk_sec") or secciones[-1]
+    lin_g = [l for l in lineas if l["seccion"] == sec_g]
+    apilar = sec_g.lower().startswith("aceite") and len(lin_g) > 1     # las etapas del aceite se suman
+    paleta = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6", "#008300", "#e34948"]
+    fig = go.Figure()
+    for i, l in enumerate(lin_g):
+        ys = [cpk(l["costo"], l["divisor"], a)[0] for a in anios_p]
+        fig.add_bar(x=[etq_a(a) for a in anios_p], y=ys, name=l["linea"], marker_color=paleta[i % len(paleta)],
+                    hovertemplate=l["linea"] + "<br>%{x}: $%{y:,.0f}/kg<extra></extra>")
+    if apilar:
+        tot = [total_seccion(sec_g, a) for a in anios_p]
+        fig.add_scatter(x=[etq_a(a) for a in anios_p], y=tot, mode="text", showlegend=False, hoverinfo="skip",
+                        text=[f"${pesos(v)}" if v else "" for v in tot], textposition="top center",
+                        textfont=dict(size=12, color="#111827"))
+    fig.update_layout(barmode="stack" if apilar else "group", height=360, separators=",.", bargap=0.3,
+                      title=f"{sec_g} · pesos por kg" + (" (suma de etapas)" if apilar else ""),
+                      legend=dict(orientation="h", y=1.15, x=0, traceorder="normal"), margin=dict(l=10, r=10, t=70, b=10),
+                      plot_bgcolor="rgba(0,0,0,0)", yaxis=dict(gridcolor="rgba(128,128,128,0.2)", tickprefix="$"),
+                      xaxis=dict(type="category"))
+    st.plotly_chart(fig, width="stretch")
+
     with st.expander("👷 Mano de obra y otros costos por línea ($/kg)"):
         filas_mo = []
         for l in lineas:
@@ -993,6 +1016,40 @@ def mostrar_lotes_aceite(a_ref, kg):
         for _, r in lt[lt["anio"] == a].iterrows():
             filas.append(fila_html(r["lote"], resumen(lt[lt["orden"] == r["orden"]])))
         filas.append(fila_html(f"Total {a}", res[a], " class='tot'"))
+    # ---- Gráfica de rendimientos (por año o por lote de aceite)
+    modo = st.segmented_control("Ver rendimientos", ["Por año", "Por lote de aceite"], default="Por año",
+                                key="kla_modo") or "Por año"
+    if modo == "Por año":
+        xs = [str(a) for a in anios_l]
+        puntos = [res[a] for a in anios_l]
+    else:
+        lt_g = lt.sort_values("orden")
+        xs = lt_g["lote"].astype(str).tolist()
+        puntos = [resumen(lt[lt["orden"] == o]) for o in lt_g["orden"]]
+    fig = go.Figure()
+    for clave, nombre, color, guion in [("p_pelado", "Pelado (pelada ÷ testa)", "#2a78d6", "solid"),
+                                         ("p_blanca", "Nuez blanca (÷ pelada)", "#1baf7a", "solid"),
+                                         ("p_aceite", "Rendimiento aceite (÷ nuez p/aceite)", "#eb6834", "solid"),
+                                         ("p_hongo", "Hongo (÷ pelada)", "#9CA3AF", "dot")]:
+        ys = [p[clave] for p in puntos]
+        fig.add_scatter(x=xs, y=ys, name=nombre, mode="lines+markers" + ("+text" if clave == "p_aceite" else ""),
+                        connectgaps=False, line=dict(width=2.5 if clave == "p_aceite" else 2, color=color, dash=guion),
+                        text=[f"{v * 100:.0f}%" if v is not None else "" for v in ys] if clave == "p_aceite" else None,
+                        textposition="bottom center", textfont=dict(color=color, size=11),
+                        hovertemplate=nombre + "<br>%{x}: %{y:.1%}<extra></extra>")
+    if modo == "Por año":   # años donde el aceite y su nuez quedaron en lotes distintos: el % no es comparable
+        for a in anios_l:
+            d_a = lt[lt["anio"] == a]
+            if ((d_a["nuez_aceite"] > 0) & d_a["aceite"].isna()).any() and res[a]["p_aceite"]:
+                fig.add_annotation(x=anios_l.index(a), y=res[a]["p_aceite"], text="aceite y nuez<br>en lotes distintos",
+                                   showarrow=True, arrowhead=0, ay=-38, font=dict(size=10, color="#9A5B00"))
+    fig.update_layout(height=380, separators=",.", title="Rendimientos de la nuez al aceite · KAHAI",
+                      legend=dict(orientation="h", y=1.15, x=0), margin=dict(l=10, r=10, t=80, b=10),
+                      plot_bgcolor="rgba(0,0,0,0)",
+                      yaxis=dict(tickformat=".0%", range=[0, 1.02], gridcolor="rgba(128,128,128,0.2)"),
+                      xaxis=dict(type="category"))
+    st.plotly_chart(fig, width="stretch")
+
     st.markdown(f"<div class='tpk'><table><thead>{cab}</thead><tbody>{''.join(filas)}</tbody></table></div>",
                 unsafe_allow_html=True)
 
