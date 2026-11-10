@@ -922,10 +922,10 @@ def mostrar_procesamiento_kahai():
 
 
 def mostrar_lotes_aceite(a_ref, kg):
-    """De la nuez al aceite: rendimiento por lote (hoja LOTES_ACEITE de PRODUCCION_KAHAI.xlsx)."""
+    """De la nuez al aceite: rendimiento por lote de aceite KNO (hoja LOTES_ACEITE de PRODUCCION_KAHAI.xlsx)."""
     import html as _h
     lt = F.leer_tabla("kahai_lotes_aceite", "ORDER BY orden")
-    st.markdown("#### 🥜 De la nuez al aceite · rendimiento por lote")
+    st.markdown("#### 🥜 De la nuez al aceite · rendimiento por lote de aceite (KNO)")
     if lt.empty:
         st.info("Falta la hoja LOTES_ACEITE en Graficas\\PRODUCCION_KAHAI.xlsx. Llénela y corra:  "
                 "python motor_procesamiento_kahai.py")
@@ -983,7 +983,7 @@ def mostrar_lotes_aceite(a_ref, kg):
                 + celda(r["pelada"], r["p_pelado"]) + celda(r["blanca"], r["p_blanca"]) + celda(r["roja"], r["p_roja"])
                 + celda(r["hongo"], r["p_hongo"]) + celda(r["nuez_aceite"]) + celda(r["aceite"], r["p_aceite"]) + "</tr>")
 
-    cab = ("<tr><th class='izq'>Lote</th><th>Nuez testa</th><th>Nuez pelada<div class='det'>% pelado</div></th>"
+    cab = ("<tr><th class='izq'>Lote de aceite</th><th>Nuez testa</th><th>Nuez pelada<div class='det'>% pelado</div></th>"
            "<th>Blanca<div class='det'>% de pelada</div></th><th>Roja<div class='det'>% de pelada</div></th>"
            "<th>Hongo<div class='det'>% de pelada</div></th><th>Nuez para aceite</th>"
            "<th>Aceite<div class='det'>% rendimiento</div></th></tr>")
@@ -1001,17 +1001,17 @@ def mostrar_lotes_aceite(a_ref, kg):
     sin_ac = lt[(lt["nuez_aceite"] > 0) & lt["aceite"].isna()]["lote"].tolist()
     solo_ac = lt[lt["nuez_aceite"].isna() & (lt["aceite"] > 0)]["lote"].tolist()
     if sin_ac:
-        avisos.append(f"Lotes con nuez para aceite pero sin aceite: {', '.join(sin_ac)}")
+        avisos.append(f"Lotes de aceite con nuez pero sin aceite registrado: {', '.join(sin_ac)}")
     if solo_ac:
-        avisos.append(f"Lotes con aceite pero sin nuez: {', '.join(solo_ac)} (el % del año mezcla los dos)")
+        avisos.append(f"Lotes de aceite con aceite pero sin nuez: {', '.join(solo_ac)} (el % del año mezcla los dos)")
     for a in anios_l:
         for divisor, campo, nombre in [("NUEZ PELADA", "pelada", "nuez pelada"), ("EXTRACCIÓN", "aceite", "aceite")]:
             k_div, k_lot = kg.get((divisor, a)), res[a][campo]
             if k_div and k_lot and abs(k_lot / k_div - 1) > 0.01:
                 avisos.append(f"{a}: {nombre} de los lotes {pesos(k_lot)} kg ≠ hoja DIVISORES ({divisor}) "
                               f"{pesos(k_div)} kg")
-    st.caption("Fuente: hoja LOTES_ACEITE de Graficas\\PRODUCCION_KAHAI.xlsx. Lotes con H (hongo) o R (roja) son "
-               "reprocesos de esa nuez. Total del año: % pelado solo con lotes que traen nuez testa.")
+    st.caption("Fuente: hoja LOTES_ACEITE de Graficas\\PRODUCCION_KAHAI.xlsx. Cada KNO es un lote de aceite; los "
+               "que terminan en H (hongo) o R (roja) se hicieron con esa nuez. Total del año: % pelado solo con lotes que traen nuez testa.")
     if avisos:
         st.caption("⚠️ Para revisar: " + " · ".join(avisos))
 
