@@ -2,7 +2,7 @@
 """
 DIVISORES DE PROCESAMIENTO KAHAI
 ================================
-Lee Graficas\\PRODUCCION_KAHAI.xlsx (hojas DIVISORES y REGLAS) y lo guarda en la base,
+Lee Graficas\\PRODUCCION_KAHAI.xlsx (hojas DIVISORES, REGLAS y LOTES_ACEITE) y lo guarda en la base,
 para que el dashboard calcule el costo por kg de concha procesada, nuez obtenida,
 nuez pelada y aceite (extracción, filtrado, envasado, laboratorios, empaque).
 
@@ -10,7 +10,7 @@ nuez pelada y aceite (extracción, filtrado, envasado, laboratorios, empaque).
 
 Uso (desde la carpeta de la app), cada vez que se cambie ese Excel:
     python motor_procesamiento_kahai.py
-Al terminar sube las dos tablas a la nube (si está configurada).
+Al terminar sube las tablas a la nube (si está configurada).
 """
 import os
 import shutil
@@ -55,6 +55,33 @@ def leer(ruta=None):
     return div[["divisor", "anio", "kg"]], reg, ruta
 
 
+COLS_LOTES = {"AÑO": "anio", "LOTE ACEITE": "lote", "NUEZ TESTA (kg)": "nuez_testa", "NUEZ PELADA (kg)": "nuez_pelada",
+              "BLANCA (kg)": "blanca", "ROJA (kg)": "roja", "HONGO (kg)": "hongo",
+              "NUEZ PARA ACEITE (kg)": "nuez_aceite", "ACEITE (kg)": "aceite"}
+
+
+def leer_lotes(ruta=None):
+    """Hoja LOTES_ACEITE: la nuez de cada lote y cómo se transforma hasta aceite (los % se calculan en la app)."""
+    ruta = ruta or C.ARCHIVO_PRODUCCION_KAHAI
+    temporal = os.path.join(tempfile.gettempdir(), "lectura_lotes_kahai.xlsx")
+    shutil.copy2(ruta, temporal)
+    try:
+        h = pd.read_excel(temporal, sheet_name="LOTES_ACEITE", usecols="A:N")
+    except ValueError:                       # Excel viejo sin la hoja
+        return pd.DataFrame(columns=list(COLS_LOTES.values()))
+    finally:
+        os.remove(temporal)
+    h.columns = [str(c).strip() for c in h.columns]
+    h = h[[c for c in COLS_LOTES if c in h.columns]].rename(columns=COLS_LOTES)
+    h["lote"] = h["lote"].astype("string").str.strip()
+    h = h[h["lote"].notna() & (h["lote"] != "")]          # las notas de abajo no son lotes
+    h["anio"] = pd.to_numeric(h["anio"], errors="coerce").ffill().astype(int)   # año vacío = el de arriba
+    for c in list(COLS_LOTES.values())[2:]:
+        h[c] = pd.to_numeric(h[c], errors="coerce")
+    h["orden"] = range(1, len(h) + 1)
+    return h.reset_index(drop=True)
+
+
 def correr():
     div, reg, ruta = leer()
     print(f"Leído {ruta}: {div['divisor'].nunique()} divisores · años {div['anio'].min()}–{div['anio'].max()} · "
@@ -62,6 +89,9 @@ def correr():
     con = sqlite3.connect(C.BASE_LOCAL)
     div.to_sql("kahai_divisores", con, if_exists="replace", index=False)
     reg.to_sql("kahai_reglas_proc", con, if_exists="replace", index=False)
+    lotes = leer_lotes(ruta)
+    lotes.to_sql("kahai_lotes_aceite", con, if_exists="replace", index=False)
+    print(f"Lotes de aceite: {len(lotes)} ({', '.join(map(str, sorted(lotes['anio'].unique()))) or 'ninguno'})")
     con.close()
     print(f"Guardado en la base ({datetime.now():%Y-%m-%d %H:%M}).")
 

@@ -918,6 +918,103 @@ def mostrar_procesamiento_kahai():
         st.caption("Mano de obra = nómina (actividades KV_) + mano de obra al contrato. Otros = facturas de terceros "
                    "(insumos, servicios, empaques…).")
 
+    mostrar_lotes_aceite(a_ref, kg)
+
+
+def mostrar_lotes_aceite(a_ref, kg):
+    """De la nuez al aceite: rendimiento por lote (hoja LOTES_ACEITE de PRODUCCION_KAHAI.xlsx)."""
+    import html as _h
+    lt = F.leer_tabla("kahai_lotes_aceite", "ORDER BY orden")
+    st.markdown("#### 🥜 De la nuez al aceite · rendimiento por lote")
+    if lt.empty:
+        st.info("Falta la hoja LOTES_ACEITE en Graficas\\PRODUCCION_KAHAI.xlsx. Llénela y corra:  "
+                "python motor_procesamiento_kahai.py")
+        return
+    for c in ["nuez_testa", "nuez_pelada", "blanca", "roja", "hongo", "nuez_aceite", "aceite"]:
+        lt[c] = pd.to_numeric(lt[c], errors="coerce")
+    lt["anio"] = lt["anio"].astype(int)
+
+    def div_(a, b):
+        return a / b if b and pd.notna(b) and pd.notna(a) and b > 0 else None
+
+    def pct(v):
+        return "" if v is None else f"{v * 100:.0f}%"
+
+    def resumen(d):
+        con_testa = d[d["nuez_testa"] > 0]              # los reprocesos (H, R) no traen nuez testa
+        te, pe = con_testa["nuez_testa"].sum(), con_testa["nuez_pelada"].sum()
+        return {"testa": d["nuez_testa"].sum(min_count=1), "pelada": d["nuez_pelada"].sum(min_count=1),
+                "blanca": d["blanca"].sum(min_count=1), "roja": d["roja"].sum(min_count=1),
+                "hongo": d["hongo"].sum(min_count=1), "nuez_aceite": d["nuez_aceite"].sum(min_count=1),
+                "aceite": d["aceite"].sum(min_count=1), "p_pelado": div_(pe, te),
+                "p_blanca": div_(d["blanca"].sum(), pe), "p_roja": div_(d["roja"].sum(), pe),
+                "p_hongo": div_(d["hongo"].sum(), pe),
+                "p_aceite": div_(d["aceite"].sum(), d["nuez_aceite"].sum()),
+                "testa_x_kg": div_(te, d["aceite"].sum())}
+
+    anios_l = sorted(lt["anio"].unique())
+    res = {a: resumen(lt[lt["anio"] == a]) for a in anios_l}
+    a_k = a_ref if a_ref in res else anios_l[-1]
+
+    # ---- Tarjetas del año elegido
+    c1, c2, c3, c4 = st.columns(4)
+    for col, nombre, clave, inv in [(c1, "Pelado (pelada ÷ testa)", "p_pelado", False),
+                                     (c2, "Nuez blanca (÷ pelada)", "p_blanca", False),
+                                     (c3, "Rendimiento aceite (÷ nuez p/aceite)", "p_aceite", False),
+                                     (c4, "Kg nuez testa por kg de aceite", "testa_x_kg", True)]:
+        v, v0 = res[a_k][clave], res.get(a_k - 1, {}).get(clave)
+        if clave == "testa_x_kg":
+            txt = "—" if v is None else f"{v:,.1f}".replace(".", ",")
+            delta = f"{v - v0:+.1f} kg vs {a_k - 1}".replace(".", ",") if v and v0 else None
+        else:
+            txt = pct(v) or "—"
+            delta = f"{(v - v0) * 100:+.1f} pts vs {a_k - 1}".replace(".", ",") if v and v0 else None
+        col.metric(f"{nombre} · {a_k}", txt, delta, delta_color="inverse" if inv else "normal")
+
+    # ---- Tabla: kg grande y, debajo, el %
+    def celda(v, p=None):
+        if v is None or pd.isna(v):
+            return "<td>—</td>"
+        sub = f"<div class='det'>{pct(p)}</div>" if p is not None else ""
+        return f"<td>{pesos(v)}{sub}</td>"
+
+    def fila_html(nombre, r, clase=""):
+        return (f"<tr{clase}><td class='izq'>{_h.escape(str(nombre))}</td>" + celda(r["testa"])
+                + celda(r["pelada"], r["p_pelado"]) + celda(r["blanca"], r["p_blanca"]) + celda(r["roja"], r["p_roja"])
+                + celda(r["hongo"], r["p_hongo"]) + celda(r["nuez_aceite"]) + celda(r["aceite"], r["p_aceite"]) + "</tr>")
+
+    cab = ("<tr><th class='izq'>Lote</th><th>Nuez testa</th><th>Nuez pelada<div class='det'>% pelado</div></th>"
+           "<th>Blanca<div class='det'>% de pelada</div></th><th>Roja<div class='det'>% de pelada</div></th>"
+           "<th>Hongo<div class='det'>% de pelada</div></th><th>Nuez para aceite</th>"
+           "<th>Aceite<div class='det'>% rendimiento</div></th></tr>")
+    filas = []
+    for a in sorted(anios_l, reverse=True):
+        filas.append(f"<tr class='sec'><td colspan='8'>{a}</td></tr>")
+        for _, r in lt[lt["anio"] == a].iterrows():
+            filas.append(fila_html(r["lote"], resumen(lt[lt["orden"] == r["orden"]])))
+        filas.append(fila_html(f"Total {a}", res[a], " class='tot'"))
+    st.markdown(f"<div class='tpk'><table><thead>{cab}</thead><tbody>{''.join(filas)}</tbody></table></div>",
+                unsafe_allow_html=True)
+
+    # ---- Avisos: lotes incompletos y cuadre con la hoja DIVISORES
+    avisos = []
+    sin_ac = lt[(lt["nuez_aceite"] > 0) & lt["aceite"].isna()]["lote"].tolist()
+    solo_ac = lt[lt["nuez_aceite"].isna() & (lt["aceite"] > 0)]["lote"].tolist()
+    if sin_ac:
+        avisos.append(f"Lotes con nuez para aceite pero sin aceite: {', '.join(sin_ac)}")
+    if solo_ac:
+        avisos.append(f"Lotes con aceite pero sin nuez: {', '.join(solo_ac)} (el % del año mezcla los dos)")
+    for a in anios_l:
+        for divisor, campo, nombre in [("NUEZ PELADA", "pelada", "nuez pelada"), ("EXTRACCIÓN", "aceite", "aceite")]:
+            k_div, k_lot = kg.get((divisor, a)), res[a][campo]
+            if k_div and k_lot and abs(k_lot / k_div - 1) > 0.01:
+                avisos.append(f"{a}: {nombre} de los lotes {pesos(k_lot)} kg ≠ hoja DIVISORES ({divisor}) "
+                              f"{pesos(k_div)} kg")
+    st.caption("Fuente: hoja LOTES_ACEITE de Graficas\\PRODUCCION_KAHAI.xlsx. Lotes con H (hongo) o R (roja) son "
+               "reprocesos de esa nuez. Total del año: % pelado solo con lotes que traen nuez testa.")
+    if avisos:
+        st.caption("⚠️ Para revisar: " + " · ".join(avisos))
+
 
 with pest[2]:
     if vista == "KAHAI":
