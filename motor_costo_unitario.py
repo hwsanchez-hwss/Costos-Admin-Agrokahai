@@ -105,6 +105,9 @@ def leer_referencias(ruta=None):
     pxn["Kg Fruto Cosechado"] = pd.to_numeric(pxn["Kg Fruto Cosechado"], errors="coerce").fillna(0)
     ref["pxn_mes"] = pxn.groupby(["Año", "k_m", "k_u"])["Kg Fruto Cosechado"].sum().to_dict()
     ref["pxn_anio"] = pxn.groupby("Año")["Kg Fruto Cosechado"].sum().to_dict()
+    # Kg cosechados en TODA la finca ese mes: para los rubros con regla PXN_KG cuyo gasto no está en un lote
+    # (por ejemplo Poscosecha), que deben dividirse por los mismos kg que la Cosecha.
+    ref["pxn_mes_total"] = pxn.groupby(["Año", "k_m"])["Kg Fruto Cosechado"].sum().to_dict()
 
     # Filas repetidas (mismo año, lote y árboles) se cuentan una sola vez: en la hoja CENSO
     # el bloque 2023-2026 llegó a estar copiado dos veces y duplicaba el divisor.
@@ -143,6 +146,14 @@ def calcular(costos, ref):
     pares = list(zip(anio, k_m, k_u))
     d["pxn_kg"] = [ref["pxn_anio"].get(a, 0) if u == "cosecha" else ref["pxn_mes"].get((a, m, u), 0)
                    for a, m, u in pares]
+    # Regla PXN_KG sin kg propios (la ubicación no es un lote con cosecha ese mes): usa los kg de todo el mes.
+    # Antes caía a "árboles vivos"; así la Poscosecha se divide por los mismos kg que la Cosecha.
+    usa_mes = []
+    for (a, m, u), regla_f, kg_f in zip(pares, d["regla_divisor"], d["pxn_kg"]):
+        tm = ref["pxn_mes_total"].get((a, m), 0)
+        usa_mes.append(str(regla_f).upper() == "PXN_KG" and (kg_f is None or kg_f == 0) and u != "cosecha" and tm > 0)
+    d["pxn_kg"] = [ref["pxn_mes_total"].get((a, m), 0) if us else kg_f
+                   for (a, m, _), us, kg_f in zip(pares, usa_mes, d["pxn_kg"])]
     d["syrs_arboles"] = [ref["syrs"].get((a, u), 0) for a, _, u in pares]
     d["sitios_siembra"] = [ref["sembrados"].get(a) for a in anio]
     d["censo"] = [ref["censo"].get((a, u), 0) for a, _, u in pares]
@@ -151,7 +162,7 @@ def calcular(costos, ref):
     columna = {"PXN_KG": "pxn_kg", "SYRS_ARBOLES": "syrs_arboles", "SITIOS_SIEMBRA": "sitios_siembra",
                "CENSO": "censo", "ARB_TOTALVIVOS": "arb_total_vivos"}
     divisores, origen = [], []
-    for _, f in d.iterrows():
+    for i_f, (_, f) in enumerate(d.iterrows()):
         regla = str(f["regla_divisor"]).upper()
         valor = f[columna.get(regla, "arb_total_vivos")]
         if regla == "SITIOS_SIEMBRA" and (valor is None or pd.isna(valor) or valor == 0):
@@ -162,7 +173,10 @@ def calcular(costos, ref):
             valor = f["arb_total_vivos"]
             origen.append("Respaldo: árboles vivos")
         else:
-            origen.append("Propio de la regla" if regla in columna else "Árboles vivos (rubro sin regla)")
+            if usa_mes[i_f]:
+                origen.append("Propio de la regla (kg del mes, todos los lotes)")
+            else:
+                origen.append("Propio de la regla" if regla in columna else "Árboles vivos (rubro sin regla)")
         divisores.append(valor)
     d["divisor"] = divisores
     d["origen_divisor"] = origen
