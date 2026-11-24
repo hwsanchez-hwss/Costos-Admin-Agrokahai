@@ -1550,9 +1550,10 @@ with pest[2]:
                                    f"{DIV_REGLA.get(regla_t, ('', 'árboles vivos'))[1]}.{txt_resp}")
                     else:
                         reglas_t = ", ".join(sorted(str(x) for x in base["regla_divisor"].dropna().unique()))
-                        st.caption(f"Debajo de cada año: árboles vivos de la finca (ARB_TOTAL), solo como referencia. "
-                                   f"La tabla mezcla varias reglas ({reglas_t}); cada fila usa el divisor de la suya. "
-                                   "Elija un rubro para ver su divisor exacto.")
+                        st.markdown(f"<div style='font-size:0.7rem;line-height:1.35;color:#8A949B;margin:2px 0 4px'>"
+                                    f"Debajo de cada año: árboles vivos de la finca (ARB_TOTAL), solo como referencia. "
+                                    f"La tabla mezcla varias reglas ({__import__('html').escape(reglas_t)}); cada fila usa el divisor de la suya. "
+                                    "Elija un rubro para ver su divisor exacto.</div>", unsafe_allow_html=True)
                     # Aviso automático cuando la base cambia mucho de un año a otro
                     serie = (pro_a.groupby("anio")["valor"].sum() / base.groupby("anio")["valor"].sum()).fillna(0)
                     serie = serie.reindex(sorted(base["anio"].dropna().unique())).fillna(0)
