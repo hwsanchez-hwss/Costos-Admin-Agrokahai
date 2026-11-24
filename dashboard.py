@@ -1489,7 +1489,10 @@ with pest[2]:
                     elif rg == "SYRS_ARBOLES":
                         v = sub[sub["syrs_arboles"] > 0].groupby("ubicacion")["syrs_arboles"].max().sum()
                     elif rg == "PXN_KG":
-                        v = sub[sub["pxn_kg"] > 0].groupby(["mes", "ubicacion"])["pxn_kg"].max().sum()
+                        es_mes = sub["origen_divisor"].astype(str).str.contains("kg del mes", na=False)
+                        # lotes: kg por mes y lote; gastos fuera de un lote (Poscosecha): kg de toda la finca ese mes, una sola vez
+                        v = (sub[(sub["pxn_kg"] > 0) & ~es_mes].groupby(["mes", "ubicacion"])["pxn_kg"].max().sum()
+                             + sub[(sub["pxn_kg"] > 0) & es_mes].groupby("mes")["pxn_kg"].max().sum())
                     else:
                         v = arb_anio.get(int(sub["anio"].iloc[0]))
                     ic = DIV_REGLA.get(rg, ("🌳", ""))[0]
@@ -1572,7 +1575,7 @@ with pest[2]:
                 if base[por].nunique() > 16:
                     st.toggle(f"Ver todas las filas ({base[por].nunique()})", key="cu_ver_todas",
                               help="Por defecto se muestran los 15 de mayor gasto y el resto se junta en 'Otras'.")
-                pro_a = base[base["origen_divisor"] == "Propio de la regla"]
+                pro_a = base[base["origen_divisor"].astype(str).str.startswith("Propio de la regla")]
                 if eje == "Año":
                     regla_t = regla_de(base)
                     if regla_t:
