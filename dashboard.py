@@ -1472,7 +1472,32 @@ with pest[2]:
                         return None, True          # sin sitios sembrados: el costo queda en blanco
                     return arb_anio.get(a), True   # la regla no tiene su divisor ese año: respaldo árboles vivos
 
-                def html_tabla_cu(t, nombre_c, b=None):
+                UNI_DIV = {"SITIOS_SIEMBRA": "sitios", "CENSO": "árb.", "PXN_KG": "kg", "SYRS_ARBOLES": "árb.", "ARB_TOTALVIVOS": "árb."}
+
+                def divisor_celda(sub):
+                    """Divisor de la regla de UNA celda (fila × año/mes), para mostrarlo en pequeño debajo del costo unitario."""
+                    if sub is None or sub.empty:
+                        return ""
+                    rr = {"ARB_TOTALVIVOS" if str(x).upper() in ("—", "ARB_TOTALVIVOS") else str(x).upper() for x in sub["regla_divisor"].dropna().unique()}
+                    if len(rr) != 1:
+                        return '<span class="dv" title="Esta celda mezcla varias reglas de divisor">varias reglas</span>'
+                    rg = rr.pop()
+                    if rg == "SITIOS_SIEMBRA":
+                        v = sub["sitios_siembra"].max()
+                    elif rg == "CENSO":
+                        v = sub[sub["censo"] > 0].groupby("ubicacion")["censo"].max().sum()
+                    elif rg == "SYRS_ARBOLES":
+                        v = sub[sub["syrs_arboles"] > 0].groupby("ubicacion")["syrs_arboles"].max().sum()
+                    elif rg == "PXN_KG":
+                        v = sub[sub["pxn_kg"] > 0].groupby(["mes", "ubicacion"])["pxn_kg"].max().sum()
+                    else:
+                        v = arb_anio.get(int(sub["anio"].iloc[0]))
+                    ic = DIV_REGLA.get(rg, ("🌳", ""))[0]
+                    if not v or pd.isna(v) or v <= 0:
+                        return f'<span class="dv" title="Regla {rg}: sin divisor en este período">{ic} sin divisor</span>'
+                    return f'<span class="dv" title="Divisor de la regla {rg}">{ic} {pesos(v)} {UNI_DIV.get(rg, "")}</span>'
+
+                def html_tabla_cu(t, nombre_c, b=None, bg=None, por_c=None):
                     """Tabla ejecutiva en HTML: el año arriba y, en una segunda línea, el divisor de su regla."""
                     cols = [c for c in t.columns if c not in (nombre_c, "Gasto total", "% del gasto")]
                     b = base if b is None else b
@@ -1493,12 +1518,27 @@ with pest[2]:
                     cab = (f'<tr><th class="izq">{_html.escape(nombre_c)}</th><th>Gasto total</th><th>% del gasto</th>'
                            + "".join(th_anio(c) for c in cols) + "</tr>")
                     filas_h = []
+                    if bg is not None and por_c is not None:
+                        _x_de = {(str(int(p)) if eje == "Año" else etiqueta(p)): p for p in bg["_x"].dropna().unique()}
+                        _celdas = {k: g for k, g in bg.groupby([por_c, "_x"])}
+                    else:
+                        _x_de, _celdas = {}, {}
+
+                    def celda_html(fila, col, val):
+                        if pd.isna(val):
+                            return "<td>—</td>"
+                        sub = None
+                        if fila == "TOTAL":
+                            sub = bg[bg["_x"] == _x_de.get(col)] if bg is not None and col in _x_de else None
+                        else:
+                            sub = _celdas.get((fila, _x_de.get(col)))
+                        return f"<td>{unitario(val)}{divisor_celda(sub) if sub is not None else ''}</td>"
                     for _, r in t.iterrows():
                         clase = ' class="tot"' if r[nombre_c] == "TOTAL" else ""
                         pct_txt = f"{r['% del gasto']:.1%}".replace(".", ",")
                         filas_h.append(f"<tr{clase}><td class='izq'>{_html.escape(str(r[nombre_c]))}</td>"
                                        f"<td>{millones(r['Gasto total'])}</td><td>{pct_txt}</td>"
-                                       + "".join(f"<td>{unitario(r[c])}</td>" for c in cols) + "</tr>")
+                                       + "".join(celda_html(r[nombre_c], c, r[c]) for c in cols) + "</tr>")
                     return f'<div class="tcu"><table><thead>{cab}</thead><tbody>{"".join(filas_h)}</tbody></table></div>'
 
                 st.markdown("""<style>
@@ -1511,6 +1551,7 @@ with pest[2]:
                                  background:#E8F1E8; color:#1B5E20; font-weight:700; font-size:0.72rem; }
                   .tcu th .sub.resp { background:#FFF4E0; color:#9A5B00; }
                   .tcu td { text-align:right; padding:0.38rem 0.5rem; border-bottom:1px solid #F0F2F0; white-space:nowrap; }
+                  .tcu td .dv { display:block; font-size:0.64rem; font-weight:400; color:#8A949B; line-height:1.1; margin-top:1px; }
                   .tcu .izq { text-align:left; white-space:normal; min-width:140px; max-width:220px; }
                   .tcu tbody tr:hover td { background:#F9FBF9; }
                   .tcu tr.tot td { font-weight:700; border-top:2px solid #CBD5CC; background:#FAFBFA; }
@@ -1524,9 +1565,10 @@ with pest[2]:
                     resto = g.index[n:]
                     return b.assign(**{por_c: b[por_c].where(~b[por_c].isin(resto), f"Otras ({len(resto)})")})
 
-                tabla_cu = armar_tabla_cu(agrupar_resto(base, por), por, ver)
+                bg_cu = agrupar_resto(base, por)
+                tabla_cu = armar_tabla_cu(bg_cu, por, ver)
                 cols_cu = [c for c in tabla_cu.columns if c not in (ver, "Gasto total", "% del gasto")]
-                st.markdown(html_tabla_cu(tabla_cu, ver), unsafe_allow_html=True)
+                st.markdown(html_tabla_cu(tabla_cu, ver, None, bg_cu, por), unsafe_allow_html=True)
                 if base[por].nunique() > 16:
                     st.toggle(f"Ver todas las filas ({base[por].nunique()})", key="cu_ver_todas",
                               help="Por defecto se muestran los 15 de mayor gasto y el resto se junta en 'Otras'.")
@@ -1552,7 +1594,7 @@ with pest[2]:
                         reglas_t = ", ".join(sorted(str(x) for x in base["regla_divisor"].dropna().unique()))
                         st.markdown(f"<div style='font-size:0.7rem;line-height:1.35;color:#8A949B;margin:2px 0 4px'>"
                                     f"Debajo de cada año: árboles vivos de la finca (ARB_TOTAL), solo como referencia. "
-                                    f"La tabla mezcla varias reglas ({__import__('html').escape(reglas_t)}); cada fila usa el divisor de la suya. "
+                                    f"La tabla mezcla varias reglas ({__import__('html').escape(reglas_t)}); cada fila usa el divisor de la suya, que se ve en gris debajo de cada valor. "
                                     "Elija un rubro para ver su divisor exacto.</div>", unsafe_allow_html=True)
                     # Aviso automático cuando la base cambia mucho de un año a otro
                     serie = (pro_a.groupby("anio")["valor"].sum() / base.groupby("anio")["valor"].sum()).fillna(0)
