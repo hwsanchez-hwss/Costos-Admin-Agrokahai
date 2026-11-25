@@ -8,8 +8,12 @@ regla de su rubro y calcula  COSTO_UNITARIO = DEBITO / DIVISOR.
 
 Reglas (se leen de la hoja "⚙ CONFIG" del Excel, no están escritas aquí):
     CENSO           -> árboles del lote en ese año (hoja CENSO)
-    PXN_KG          -> kg cosechados en el lote ese año y mes (hoja PXN).
-                       Si la asignación es "Cosecha" (sin lote), los kg de TODO el año.
+    PXN_KG          -> kg cosechados (hoja PXN), nunca árboles:
+                       - gasto en un LOTE: kg del lote en ese mes; si ese mes no tiene kg, kg del lote en el año.
+                       - gasto SIN lote (Poscosecha en CIMARRON/MATALARGA, Secador, Fruto Concha, Varios,
+                         asignación "Cosecha"...): kg cosechados en TODO el año en toda la finca
+                         (la fruta que pasa por poscosecha).
+                       - sin kg: el costo unitario queda EN BLANCO (leyenda "Cosecha/SinDato" del ⚙ CONFIG).
     SITIOS_SIEMBRA  -> sitios sembrados en el año (hoja ARB_TOTAL, tabla de la derecha)
     SYRS_ARBOLES    -> árboles sembrados/resembrados del lote en el año (hoja SYRS)
     ARB_TotalVivos  -> total de sitios vivos del año (hoja ARB_TOTAL)
@@ -105,9 +109,8 @@ def leer_referencias(ruta=None):
     pxn["Kg Fruto Cosechado"] = pd.to_numeric(pxn["Kg Fruto Cosechado"], errors="coerce").fillna(0)
     ref["pxn_mes"] = pxn.groupby(["Año", "k_m", "k_u"])["Kg Fruto Cosechado"].sum().to_dict()
     ref["pxn_anio"] = pxn.groupby("Año")["Kg Fruto Cosechado"].sum().to_dict()
-    # Kg cosechados en TODA la finca ese mes: para los rubros con regla PXN_KG cuyo gasto no está en un lote
-    # (por ejemplo Poscosecha), que deben dividirse por los mismos kg que la Cosecha.
-    ref["pxn_mes_total"] = pxn.groupby(["Año", "k_m"])["Kg Fruto Cosechado"].sum().to_dict()
+    ref["pxn_lote_anio"] = pxn.groupby(["Año", "k_u"])["Kg Fruto Cosechado"].sum().to_dict()
+    ref["lotes_pxn"] = set(pxn["k_u"].dropna()) - {""}       # ubicaciones que son lotes con cosecha
 
     # Filas repetidas (mismo año, lote y árboles) se cuentan una sola vez: en la hoja CENSO
     # el bloque 2023-2026 llegó a estar copiado dos veces y duplicaba el divisor.
@@ -144,16 +147,20 @@ def calcular(costos, ref):
     d["regla_divisor"] = d["rubro"].map(lambda r: ref["reglas"].get(clave(r), "—"))
 
     pares = list(zip(anio, k_m, k_u))
-    d["pxn_kg"] = [ref["pxn_anio"].get(a, 0) if u == "cosecha" else ref["pxn_mes"].get((a, m, u), 0)
-                   for a, m, u in pares]
-    # Regla PXN_KG sin kg propios (la ubicación no es un lote con cosecha ese mes): usa los kg de todo el mes.
-    # Antes caía a "árboles vivos"; así la Poscosecha se divide por los mismos kg que la Cosecha.
-    usa_mes = []
-    for (a, m, u), regla_f, kg_f in zip(pares, d["regla_divisor"], d["pxn_kg"]):
-        tm = ref["pxn_mes_total"].get((a, m), 0)
-        usa_mes.append(str(regla_f).upper() == "PXN_KG" and (kg_f is None or kg_f == 0) and u != "cosecha" and tm > 0)
-    d["pxn_kg"] = [ref["pxn_mes_total"].get((a, m), 0) if us else kg_f
-                   for (a, m, _), us, kg_f in zip(pares, usa_mes, d["pxn_kg"])]
+    # Kg para la regla PXN_KG (ver arriba). origen_kg dice de dónde salió cada divisor.
+    kg_fila, origen_kg = [], []
+    for a, m, u in pares:
+        if u in ref["lotes_pxn"]:
+            v = ref["pxn_mes"].get((a, m, u), 0)
+            if v:
+                kg_fila.append(v); origen_kg.append("Propio de la regla")
+            else:
+                kg_fila.append(ref["pxn_lote_anio"].get((a, u), 0))
+                origen_kg.append("Propio de la regla (kg del lote en el año)")
+        else:
+            kg_fila.append(ref["pxn_anio"].get(a, 0))
+            origen_kg.append("Propio de la regla (kg del año, toda la finca)")
+    d["pxn_kg"] = kg_fila
     d["syrs_arboles"] = [ref["syrs"].get((a, u), 0) for a, _, u in pares]
     d["sitios_siembra"] = [ref["sembrados"].get(a) for a in anio]
     d["censo"] = [ref["censo"].get((a, u), 0) for a, _, u in pares]
@@ -165,24 +172,28 @@ def calcular(costos, ref):
     for i_f, (_, f) in enumerate(d.iterrows()):
         regla = str(f["regla_divisor"]).upper()
         valor = f[columna.get(regla, "arb_total_vivos")]
-        if regla == "SITIOS_SIEMBRA" and (valor is None or pd.isna(valor) or valor == 0):
+        vacio = valor is None or pd.isna(valor) or valor == 0
+        if regla == "SITIOS_SIEMBRA" and vacio:
             divisores.append(None)           # sin sitios sembrados del año: costo unitario en blanco
             origen.append("Sin sitios sembrados (CU en blanco)")
+            continue
+        if regla == "PXN_KG" and vacio:
+            divisores.append(None)           # sin kg cosechados: costo unitario en blanco (nunca árboles)
+            origen.append("Sin kg cosechados (CU en blanco)")
             continue
         if valor == 0:                       # divisor propio en cero -> árboles vivos del año
             valor = f["arb_total_vivos"]
             origen.append("Respaldo: árboles vivos")
+        elif regla == "PXN_KG":
+            origen.append(origen_kg[i_f])
         else:
-            if usa_mes[i_f]:
-                origen.append("Propio de la regla (kg del mes, todos los lotes)")
-            else:
-                origen.append("Propio de la regla" if regla in columna else "Árboles vivos (rubro sin regla)")
+            origen.append("Propio de la regla" if regla in columna else "Árboles vivos (rubro sin regla)")
         divisores.append(valor)
     d["divisor"] = divisores
     d["origen_divisor"] = origen
 
     def cu(f):
-        if f["origen_divisor"] == "Sin sitios sembrados (CU en blanco)":
+        if "CU en blanco" in f["origen_divisor"]:
             return None
         div = f["divisor"]
         debito = 0 if pd.isna(f["valor"]) else f["valor"]   # débito vacío cuenta como 0
@@ -190,7 +201,7 @@ def calcular(costos, ref):
             return debito                   # igual que el Excel: sin divisor, CU = débito
         return debito / div
     d["costo_unitario"] = d.apply(cu, axis=1)
-    sin = (d["divisor"].isna() | (d["divisor"] == 0)) & (d["origen_divisor"] != "Sin sitios sembrados (CU en blanco)")
+    sin = (d["divisor"].isna() | (d["divisor"] == 0)) & ~d["origen_divisor"].str.contains("CU en blanco")
     d.loc[sin, "origen_divisor"] = "Sin divisor (CU = débito)"
     return d
 

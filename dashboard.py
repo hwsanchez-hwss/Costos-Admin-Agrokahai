@@ -761,6 +761,18 @@ def ponderado(d, por, eje):
     El lote siempre queda en el grupo más fino porque el divisor depende del lote."""
     llaves = [c for c in [por, eje] if c]
     finas = llaves + [c for c in ["mes", "ubicacion", "regla_divisor"] if c not in llaves]
+    # Filas cuyo divisor es de TODO el año (Poscosecha y gastos sin lote: kg del año de la finca; lote sin kg en el
+    # mes: kg del lote en el año) no se parten por mes ni por ubicación: si se parten, el promedio sale por debajo
+    # del costo real por kg (ej. Poscosecha 2024: $1.004/kg real vs $186 partido por mes).
+    if "origen_divisor" in d.columns:
+        o = d["origen_divisor"].astype(str)
+        finca, lote_a = o.str.contains("toda la finca"), o.str.contains("lote en el año")
+        if finca.any() or lote_a.any():
+            d = d.copy()
+            if "mes" not in llaves:
+                d.loc[finca | lote_a, "mes"] = "AÑO"
+            if "ubicacion" not in llaves:
+                d.loc[finca, "ubicacion"] = "TODA LA FINCA"
     g = d.groupby(finas, dropna=False).agg(
         vDebito=("valor", "sum"), vDivisor=("divisor", "max")).reset_index()
     g["vCU"] = np.where((g["vDivisor"] == 0) | g["vDivisor"].isna(), np.nan, g["vDebito"] / g["vDivisor"])
@@ -1443,7 +1455,8 @@ with pest[2]:
                 # (Siembra -> sitios sembrados del año; MIAR, Nutrición -> censo de los lotes; Cosecha -> kg; etc.)
                 DIV_REGLA = {"SITIOS_SIEMBRA": ("🌱", "sitios sembrados en el año (hoja ARB_TOTAL, derecha)"),
                              "CENSO": ("🌳", "árboles del censo de los lotes con gasto"),
-                             "PXN_KG": ("⚖️", "kg cosechados"),
+                             "PXN_KG": ("⚖️", "kg cosechados (Cosecha en un lote: kg del lote; Poscosecha y gastos sin lote: "
+                                               "kg cosechados en el año en toda la finca, la fruta que pasa por poscosecha)"),
                              "SYRS_ARBOLES": ("🌱", "árboles sembrados/resembrados (SYRS)"),
                              "ARB_TOTALVIVOS": ("🌳", "árboles vivos de la finca (ARB_TOTAL)")}
 
@@ -1451,6 +1464,35 @@ with pest[2]:
                     rr = {str(x).upper() for x in b["regla_divisor"].dropna().unique()}
                     rr = {"ARB_TOTALVIVOS" if x in ("—", "ARB_TOTALVIVOS") else x for x in rr}
                     return rr.pop() if len(rr) == 1 else None      # None = varias reglas mezcladas
+
+                def norm_regla(x):
+                    x = str(x).upper()
+                    return "ARB_TOTALVIVOS" if x in ("—", "ARB_TOTALVIVOS") else x
+
+                def regla_principal(b):
+                    """Regla de la tabla: la única, o la que lleva >= 80% del gasto. Devuelve (regla, participación)."""
+                    if b.empty:
+                        return None, 0
+                    g = b.groupby(b["regla_divisor"].map(norm_regla))["valor"].sum()
+                    if g.sum() <= 0:
+                        return None, 0
+                    r, part = g.idxmax(), g.max() / g.sum()
+                    return (r, part) if part >= 0.8 else (None, part)
+
+                def kg_pxn(sub):
+                    """Kg cosechados de un grupo de filas con regla PXN_KG, sin contar dos veces:
+                    lotes por mes, lotes por año, y la finca completa en el año (Poscosecha, asignaciones sin lote)."""
+                    sub = sub[(sub["regla_divisor"].map(norm_regla) == "PXN_KG") & (sub["pxn_kg"] > 0)]
+                    if sub.empty:
+                        return 0
+                    o = sub["origen_divisor"].astype(str)
+                    # por lote: la suma de sus meses, o su total del año si alguna fila usó el año (lo mayor)
+                    por_mes = (sub[o == "Propio de la regla"].groupby(["anio", "mes", "ubicacion"])["pxn_kg"].max()
+                               .groupby(level=["anio", "ubicacion"]).sum())
+                    por_anio = sub[o.str.contains("lote en el año")].groupby(["anio", "ubicacion"])["pxn_kg"].max()
+                    lotes = pd.concat([por_mes, por_anio]).groupby(level=[0, 1]).max().sum()
+                    finca = sub[o.str.contains("toda la finca|kg del mes")].groupby("anio")["pxn_kg"].max().sum()
+                    return max(lotes, finca)
 
                 def divisor_anio(b, a, regla):
                     ba = b[b["anio"] == a]
@@ -1463,12 +1505,12 @@ with pest[2]:
                     elif regla == "SYRS_ARBOLES":
                         v = ba[ba["syrs_arboles"] > 0].groupby("ubicacion")["syrs_arboles"].max().sum()
                     elif regla == "PXN_KG":
-                        v = ba[ba["pxn_kg"] > 0].groupby(["mes", "ubicacion"])["pxn_kg"].max().sum()
+                        v = kg_pxn(ba)
                     else:
                         return arb_anio.get(a), False
                     if v and v > 0:
                         return v, False
-                    if regla == "SITIOS_SIEMBRA":
+                    if regla in ("SITIOS_SIEMBRA", "PXN_KG"):
                         return None, True          # sin sitios sembrados: el costo queda en blanco
                     return arb_anio.get(a), True   # la regla no tiene su divisor ese año: respaldo árboles vivos
 
@@ -1489,10 +1531,8 @@ with pest[2]:
                     elif rg == "SYRS_ARBOLES":
                         v = sub[sub["syrs_arboles"] > 0].groupby("ubicacion")["syrs_arboles"].max().sum()
                     elif rg == "PXN_KG":
-                        es_mes = sub["origen_divisor"].astype(str).str.contains("kg del mes", na=False)
-                        # lotes: kg por mes y lote; gastos fuera de un lote (Poscosecha): kg de toda la finca ese mes, una sola vez
-                        v = (sub[(sub["pxn_kg"] > 0) & ~es_mes].groupby(["mes", "ubicacion"])["pxn_kg"].max().sum()
-                             + sub[(sub["pxn_kg"] > 0) & es_mes].groupby("mes")["pxn_kg"].max().sum())
+                        # lotes: kg del lote (mes o año); Poscosecha y gastos sin lote: kg del año de toda la finca
+                        v = kg_pxn(sub)
                     else:
                         v = arb_anio.get(int(sub["anio"].iloc[0]))
                     ic = DIV_REGLA.get(rg, ("🌳", ""))[0]
@@ -1504,19 +1544,22 @@ with pest[2]:
                     """Tabla ejecutiva en HTML: el año arriba y, en una segunda línea, el divisor de su regla."""
                     cols = [c for c in t.columns if c not in (nombre_c, "Gasto total", "% del gasto")]
                     b = base if b is None else b
-                    regla = regla_de(b)
+                    regla, part_r = regla_principal(b)
+                    if regla:            # el encabezado usa solo las filas de la regla principal
+                        b = b[b["regla_divisor"].map(norm_regla) == regla]
                     icono = DIV_REGLA.get(regla, ("🌳", ""))[0]
                     def th_anio(c):
                         if eje == "Año":
                             v, resp = divisor_anio(b, int(c), regla) if regla else (arb_anio.get(int(c)), False)
                             if resp and not v:
-                                return (f'<th class="anio">{c}<div class="sub resp" title="La hoja ARB_TOTAL no tiene '
-                                        f'sitios sembrados este año: el costo queda en blanco">🌱 sin dato</div></th>')
+                                return (f'<th class="anio">{c}<div class="sub resp" title="Sin divisor este año: '
+                                        f'el costo queda en blanco">{icono} sin dato</div></th>')
                             if v and resp:
                                 return (f'<th class="anio">{c}<div class="sub resp" title="Sin dato propio de la regla '
                                         f'este año: se dividió por árboles vivos">🌳 {pesos(v)} *</div></th>')
                             if v:
-                                return f'<th class="anio">{c}<div class="sub">{icono} {pesos(v)}</div></th>'
+                                uni = " kg" if regla == "PXN_KG" else ""
+                                return f'<th class="anio">{c}<div class="sub">{icono} {pesos(v)}{uni}</div></th>'
                         return f'<th class="anio">{c}</th>'
                     cab = (f'<tr><th class="izq">{_html.escape(nombre_c)}</th><th>Gasto total</th><th>% del gasto</th>'
                            + "".join(th_anio(c) for c in cols) + "</tr>")
@@ -1577,11 +1620,15 @@ with pest[2]:
                               help="Por defecto se muestran los 15 de mayor gasto y el resto se junta en 'Otras'.")
                 pro_a = base[base["origen_divisor"].astype(str).str.startswith("Propio de la regla")]
                 if eje == "Año":
-                    regla_t = regla_de(base)
+                    regla_t, part_t = regla_principal(base)
                     if regla_t:
                         resp_a = [int(a) for a in sorted(base["anio"].dropna().unique())
-                                  if divisor_anio(base, int(a), regla_t)[1]] if regla_t != "ARB_TOTALVIVOS" else []
-                        if resp_a and regla_t == "SITIOS_SIEMBRA":
+                                  if divisor_anio(base[base["regla_divisor"].map(norm_regla) == regla_t], int(a), regla_t)[1]] \
+                            if regla_t != "ARB_TOTALVIVOS" else []
+                        if resp_a and regla_t == "PXN_KG":
+                            txt_resp = (f" ⚠️ **{', '.join(map(str, resp_a))}**: no hay kg cosechados en la hoja PXN para ese "
+                                        "año, por eso el costo queda en blanco.")
+                        elif resp_a and regla_t == "SITIOS_SIEMBRA":
                             txt_resp = (f" ⚠️ **{', '.join(map(str, resp_a))}**: la hoja ARB_TOTAL aún no tiene sitios "
                                         "sembrados para ese año, por eso el costo queda en blanco. Al registrarlos y "
                                         "correr motor_costo_unitario.py, aparece solo.")
@@ -1591,8 +1638,14 @@ with pest[2]:
                                         "Al completarlo, el costo se corrige solo.")
                         else:
                             txt_resp = ""
+                        otras = ""
+                        if part_t < 0.999:
+                            otros_r = (base[base["regla_divisor"].map(norm_regla) != regla_t]
+                                       .groupby(por)["valor"].sum().sort_values(ascending=False).index[:4])
+                            otras = (f" Es la regla del {part_t:.0%} del gasto; {', '.join(map(str, otros_r))} usa(n) su "
+                                     "propia regla, que se ve en gris debajo de cada valor.")
                         st.caption(f"Debajo de cada año: el divisor de la regla **{regla_t}** — "
-                                   f"{DIV_REGLA.get(regla_t, ('', 'árboles vivos'))[1]}.{txt_resp}")
+                                   f"{DIV_REGLA.get(regla_t, ('', 'árboles vivos'))[1]}.{otras}{txt_resp}")
                     else:
                         reglas_t = ", ".join(sorted(str(x) for x in base["regla_divisor"].dropna().unique()))
                         st.markdown(f"<div style='font-size:0.7rem;line-height:1.35;color:#8A949B;margin:2px 0 4px'>"
