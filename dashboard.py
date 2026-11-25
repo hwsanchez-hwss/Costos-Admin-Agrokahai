@@ -20,6 +20,7 @@ Pestañas:
 """
 import os
 import io
+import re
 
 import numpy as np
 import pandas as pd
@@ -1421,6 +1422,9 @@ with pest[2]:
             # (El ponderado total mezcla unidades distintas —por árbol, por kg, por sitio sembrado—,
             #  por eso arriba se muestra el costo por árbol vivo, que se lee directo.)
             arb_anio = datos_cu.groupby("anio")["arb_total_vivos"].max()
+            # Lotes: ubicaciones con censo o con kg cosechados propios (L1…L25, ML1…, HMPG)
+            lotes_cu = {u for u in datos_cu["ubicacion"].dropna().unique()
+                        if re.match(r"^(ML|L)\d+$|^HMPG$", str(u).strip(), flags=re.I)}
 
             # ---- Tabla ponderada (igual a la de la app de campo / Power BI)
             st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.1rem'>"
@@ -1452,7 +1456,13 @@ with pest[2]:
             else:
                 ver, por = "Detalle", "descripcion"
             ruta = " › ".join([titulo_vista] + elegidos_n)
-            rc1, rc2 = st.columns([4, 1.3], vertical_alignment="center")
+            rc1, rc3, rc2 = st.columns([3.7, 1.1, 1.3], vertical_alignment="center")
+            # Ver por lote en cualquier nivel (ej. MIAR por lote sin elegir actividad)
+            if "ubicacion" not in [p_ for _, p_ in NIVELES[:len(elegidos_n)]] and por != "descripcion":
+                if rc3.toggle("📍 Ver por lote", key="cu_por_lote", value=False,
+                              help="Filas por lote (ubicación), ordenadas del más caro al más barato, con su "
+                                   "diferencia contra el promedio de los lotes."):
+                    ver, por = "Ubicación", "ubicacion"
             rc1.markdown(f'<div style="font-size:0.82rem;color:#374151;margin:-0.35rem 0 0.1rem">📍 <b>{ruta}</b>'
                          f' &nbsp;·&nbsp; filas por <b>{ver}</b></div>', unsafe_allow_html=True)
             # El costo real es gasto ÷ unidades. El ponderado de Power BI queda solo para cuadrar con el informe viejo.
@@ -1656,7 +1666,8 @@ with pest[2]:
 
                 def html_tabla_cu(t, nombre_c, b=None, bg=None, por_c=None):
                     """Tabla ejecutiva en HTML: el año arriba y, en una segunda línea, el divisor de su regla."""
-                    cols = [c for c in t.columns if c not in (nombre_c, "Gasto total", "% del gasto")]
+                    cols = [c for c in t.columns if c not in (nombre_c, "Gasto total", "% del gasto", "_vs")]
+                    con_vs = "_vs" in t.columns
                     b = base if b is None else b
                     b_todo = b           # todo el gasto de la tabla (para el TOTAL directo)
                     regla, part_r = regla_principal(b)
@@ -1681,7 +1692,10 @@ with pest[2]:
                                 return f'<th class="anio">{c}<div class="sub">{icono} {pesos(v)}{uni}</div></th>'
                         return f'<th class="anio">{c}</th>'
                     cab = (f'<tr><th class="izq">{_html.escape(nombre_c)}</th><th>Gasto total</th><th>% del gasto</th>'
-                           + "".join(th_anio(c) for c in cols) + "</tr>")
+                           + (f'<th class="anio">Costo {vs_ref}</th><th class="anio">vs promedio<div class="sub">lotes {vs_ref}</div></th>'
+                              if con_vs else "")
+                           + "".join(th_anio(c) for c in cols)
+                           + "</tr>")
                     filas_h = []
                     if bg is not None and por_c is not None:
                         _x_de = {(str(int(p)) if eje == "Año" else etiqueta(p)): p for p in bg["_x"].dropna().unique()}
@@ -1695,17 +1709,35 @@ with pest[2]:
                         sub = None
                         if fila == "TOTAL":
                             sub = bg[bg["_x"] == _x_de.get(col)] if bg is not None and col in _x_de else None
+                        elif fila == "PROMEDIO LOTES":
+                            sub = (bg[(bg["_x"] == _x_de.get(col)) & bg["ubicacion"].isin(lotes_cu)]
+                                   if bg is not None and col in _x_de else None)
                         else:
                             sub = _celdas.get((fila, _x_de.get(col)))
                         dv = divisor_celda(sub) if sub is not None else ""
                         return f"<td>{unitario(val)}{dv}</td>"
                     hay_directo = eje == "Año" and bool(div_cab) and ver_pond
+                    def celda_vs(v, costo_ref=None):
+                        if not con_vs:
+                            return ""
+                        c_ref = f"<td style='font-weight:700;background:#FAFBFA'>{unitario(costo_ref)}</td>"
+                        return c_ref + celda_vs_sola(v)
+
+                    def celda_vs_sola(v):
+                        if v == "general":
+                            return '<td><span class="vs gen" title="Gasto general (sin lote): se reparte entre todos los árboles vivos">general</span></td>'
+                        if v is None or pd.isna(v):
+                            return "<td>—</td>"
+                        clase_v = "alto" if v > 0.10 else ("bajo" if v < -0.10 else "medio")
+                        return f'<td><span class="vs {clase_v}">{porcentaje(v)}</span></td>'
                     for _, r in t.iterrows():
-                        clase = ' class="tot"' if r[nombre_c] == "TOTAL" else ""
+                        clase = (' class="tot"' if r[nombre_c] == "TOTAL" else
+                                 ' class="prom"' if r[nombre_c] == "PROMEDIO LOTES" else "")
                         nombre_f = "TOTAL ponderado" if (r[nombre_c] == "TOTAL" and hay_directo) else str(r[nombre_c])
                         pct_txt = f"{r['% del gasto']:.1%}".replace(".", ",")
                         filas_h.append(f"<tr{clase}><td class='izq'>{_html.escape(nombre_f)}</td>"
                                        f"<td>{millones(r['Gasto total'])}</td><td>{pct_txt}</td>"
+                                       + celda_vs(r["_vs"] if con_vs else None, r[vs_ref] if con_vs else None)
                                        + "".join(celda_html(r[nombre_c], c, r[c]) for c in cols) + "</tr>")
                     if hay_directo:
                         # TOTAL directo: todo el gasto del año ÷ el divisor del encabezado (lo que costó cada unidad)
@@ -1734,6 +1766,11 @@ with pest[2]:
                   .tcu tbody tr:hover td { background:#F9FBF9; }
                   .tcu tr.tot td { font-weight:700; border-top:2px solid #CBD5CC; background:#FAFBFA; }
                   .tcu tr.dir td { font-weight:700; color:#1B5E20; background:#F1F7F1; border-top:1px dashed #B9D3BA; }
+                  .tcu tr.prom td { font-weight:700; background:#F7FAF7; border-top:1px dashed #CBD5CC; }
+                  .tcu .vs { display:inline-block; min-width:3.6rem; text-align:center; padding:1px 8px; border-radius:999px;
+                             font-weight:700; font-size:0.76rem; }
+                  .tcu .vs.alto { background:#FDECEA; color:#B42318; } .tcu .vs.bajo { background:#E7F5EC; color:#067647; }
+                  .tcu .vs.medio { background:#F2F4F7; color:#475467; } .tcu .vs.gen { background:#F2F4F7; color:#98A2B3; font-weight:500; }
                   .tcu tr.dir .dvl { font-size:0.64rem; font-weight:400; color:#5B6B5E; }
                 </style>""", unsafe_allow_html=True)
 
@@ -1745,9 +1782,38 @@ with pest[2]:
                     resto = g.index[n:]
                     return b.assign(**{por_c: b[por_c].where(~b[por_c].isin(resto), f"Otras ({len(resto)})")})
 
-                bg_cu = agrupar_resto(base, por)
+                if por == "ubicacion" and not ver_pond:
+                    # Por lote: todos los lotes; lo que no es lote, junto en una fila
+                    bg_cu = base.assign(ubicacion=base["ubicacion"].where(base["ubicacion"].isin(lotes_cu),
+                                                                          "General (sin lote)"))
+                else:
+                    bg_cu = agrupar_resto(base, por)
                 tabla_cu = armar(bg_cu, por, ver)
-                cols_cu = [c for c in tabla_cu.columns if c not in (ver, "Gasto total", "% del gasto")]
+                # Nivel LOTE: costo real de cada lote frente al promedio de los lotes (del más caro al más barato)
+                vs_ref = None
+                if por == "ubicacion" and not ver_pond and eje == "Año":
+                    cols_a = [c for c in tabla_cu.columns if c not in (ver, "Gasto total", "% del gasto")]
+                    vs_ref = str(anio) if str(anio) in cols_a else (cols_a[-1] if cols_a else None)
+                if vs_ref:
+                    en_lote = bg_cu["ubicacion"].isin(lotes_cu)
+                    if en_lote.any():
+                        prom = {(str(int(x))): costo_directo(s_) for x, s_ in bg_cu[en_lote].groupby("_x")}
+                        fila_p = {ver: "PROMEDIO LOTES", "Gasto total": bg_cu.loc[en_lote, "valor"].sum(),
+                                  "% del gasto": bg_cu.loc[en_lote, "valor"].sum() / bg_cu["valor"].sum()}
+                        fila_p.update({c: prom.get(c, np.nan) for c in cols_a})
+                        p_ref = prom.get(vs_ref)
+                        cuerpo = tabla_cu[~tabla_cu[ver].isin(["TOTAL"])].copy()
+                        es_l = cuerpo[ver].isin(lotes_cu)
+                        cuerpo["_vs"] = [(v / p_ref - 1) if (l and p_ref and pd.notna(v)) else ("general" if not l else None)
+                                         for v, l in zip(cuerpo[vs_ref], es_l)]
+                        lotes_t = cuerpo[es_l].sort_values(vs_ref, ascending=False, na_position="last")
+                        otros_t = cuerpo[~es_l]
+                        otras_t = otros_t[otros_t[ver].astype(str).str.startswith("Otras (")]
+                        otros_t = otros_t[~otros_t[ver].astype(str).str.startswith("Otras (")]
+                        tot_t = tabla_cu[tabla_cu[ver] == "TOTAL"].assign(_vs=None)
+                        tabla_cu = pd.concat([lotes_t, otros_t, otras_t, pd.DataFrame([{**fila_p, "_vs": None}]), tot_t],
+                                             ignore_index=True)
+                cols_cu = [c for c in tabla_cu.columns if c not in (ver, "Gasto total", "% del gasto", "_vs")]
                 st.markdown(html_tabla_cu(tabla_cu, ver, None, bg_cu, por), unsafe_allow_html=True)
                 if base[por].nunique() > 16:
                     st.toggle(f"Ver todas las filas ({base[por].nunique()})", key="cu_ver_todas",
