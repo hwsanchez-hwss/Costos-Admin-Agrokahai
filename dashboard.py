@@ -88,54 +88,94 @@ st.markdown(f"""
   .enc .chip {{ display:inline-block; padding:2px 10px; border-radius:999px; font-size:0.78rem;
                 font-weight:600; background:rgba(255,255,255,0.16); margin-right:6px; }}
 
-  /* Barra de filtros */
-  .st-key-barra_filtros {{ margin-top:0.5rem; }}
-  .st-key-bloque_periodo, .st-key-bloque_alcance {{ background:#FFFFFF; border:1px solid #E1E8DF;
-        border-radius:12px; padding:0.45rem 0.9rem 0.15rem 0.9rem; box-shadow:0 1px 3px rgba(16,24,40,0.06);
-        height:100%; gap:0.35rem; }}
-  .st-key-bloque_periodo [data-testid="stVerticalBlock"],
-  .st-key-bloque_alcance [data-testid="stVerticalBlock"] {{ gap:0.35rem; }}
-  .st-key-barra_filtros [data-testid="stWidgetLabel"] {{ margin-bottom:0.1rem; min-height:0; }}
-  .st-key-bloque_periodo {{ border-top:4px solid {VERDE}; }}
-  .st-key-bloque_alcance {{ border-top:4px solid var(--acento); }}
-  .frase {{ margin:0 0 0.45rem 0; padding:0.35rem 0.7rem; border-radius:10px; background:#F3F7F3;
-             font-size:0.85rem; color:#374151; }}
-  a.restablecer {{ font-size:0.82rem; color:#5B6B5E !important; text-decoration:none; white-space:nowrap; }}
-  a.restablecer:hover {{ color:{VERDE} !important; text-decoration:underline; }}
-  .st-key-barra_filtros label p {{ font-size:0.74rem !important; font-weight:700 !important;
-                                   text-transform:uppercase; letter-spacing:0.6px; color:#5B6B5E !important; }}
-  .st-key-barra_filtros [data-testid="stButtonGroup"] button {{ border-radius:999px; }}
-  .st-key-barra_filtros [data-testid="stButtonGroup"] button[aria-pressed="true"],
-  .st-key-barra_filtros [data-testid="stButtonGroup"] button[aria-checked="true"],
-  .st-key-barra_filtros [data-testid="stButtonGroup"] button[kind$="Active"] {{
-        background:{VERDE} !important; border-color:{VERDE} !important; color:#fff !important; }}
-  .st-key-barra_filtros [data-testid="stButtonGroup"] button[aria-pressed="true"] p,
-  .st-key-barra_filtros [data-testid="stButtonGroup"] button[aria-checked="true"] p,
-  .st-key-barra_filtros [data-testid="stButtonGroup"] button[kind$="Active"] p {{ color:#fff !important; }}
+  /* ===== Panel de filtros: una sola tarjeta ejecutiva ===== */
+  .st-key-barra_filtros {{ position:relative; overflow:hidden; margin-top:0.7rem; background:#FFFFFF;
+        border:1px solid #E3E8E2; border-radius:16px; padding:1.05rem 1.3rem 1rem 1.3rem;
+        box-shadow:0 1px 2px rgba(16,24,40,0.04), 0 10px 28px -14px rgba(16,24,40,0.18); gap:0.55rem; }}
+  .st-key-barra_filtros::before {{ content:""; position:absolute; left:0; right:0; top:0; height:4px;
+        background:linear-gradient(90deg, {VERDE} 0%, #43A047 55%, var(--acento) 100%); }}
+  .st-key-bloque_alcance, .st-key-bloque_periodo {{ gap:0.55rem; }}
+  .st-key-bloque_alcance [data-testid="stVerticalBlock"],
+  .st-key-bloque_periodo [data-testid="stVerticalBlock"] {{ gap:0.55rem; }}
+  .st-key-bloque_periodo {{ border-left:1px solid #EDF1EC; padding-left:1.4rem; }}
+  @media (max-width: 900px) {{
+    .st-key-bloque_periodo {{ border-left:none; padding-left:0; border-top:1px solid #EDF1EC; padding-top:0.7rem; }}
+  }}
+  /* Títulos de cada filtro: pequeños, en mayúsculas, discretos */
+  .st-key-barra_filtros [data-testid="stWidgetLabel"] {{ margin-bottom:0.15rem; min-height:0; }}
+  .st-key-barra_filtros label p {{ font-size:0.66rem !important; font-weight:700 !important; letter-spacing:1px;
+        text-transform:uppercase; color:#7A867C !important; }}
+  /* Botones: fichas suaves; la elegida, sólida y con sombra */
+  .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button {{ border-radius:9px !important; border:1px solid #E3E8E2 !important;
+        background:#F7F9F7 !important; min-height:2.05rem; padding:0.15rem 0.85rem !important;
+        transition:background .15s, border-color .15s, box-shadow .15s, transform .15s; }}
+  .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button p {{ color:#344054 !important; font-weight:500; font-size:0.86rem; }}
+  .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button:hover {{ background:#FFFFFF !important;
+        border-color:#9CC79F !important; transform:translateY(-1px); }}
+  .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button[aria-pressed="true"],
+  .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button[aria-checked="true"],
+  .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button[kind$="Active"] {{
+        background:{VERDE} !important; border-color:{VERDE} !important;
+        box-shadow:0 3px 8px -2px rgba(27,94,32,0.45); }}
+  .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button[aria-pressed="true"] p,
+  .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button[aria-checked="true"] p,
+  .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button[kind$="Active"] p {{ color:#fff !important; font-weight:600; }}
 
-  /* Empresa: AGROCACAY y KAHAI una debajo de la otra; Grupo en su propia columna (alto completo) */
+  /* Empresa: fichas grandes con el punto de color de cada empresa; Grupo ocupa el alto completo */
   .st-key-f_empresa [role="radiogroup"] {{ display:grid !important; grid-template-columns:auto auto;
         grid-template-rows:auto auto; gap:6px 8px; overflow:visible !important; width:fit-content; }}
-  .st-key-f_empresa [role="radiogroup"] > button {{ border-radius:10px !important; width:100%;
-        border:1px solid #CBD5CC !important; margin:0 !important; }}
+  .st-key-f_empresa [role="radiogroup"] > button {{ border-radius:10px !important; width:100%; min-width:8.2rem;
+        border:1px solid #E3E8E2 !important; margin:0 !important; background:#F7F9F7 !important; justify-content:flex-start; }}
+  .st-key-f_empresa [role="radiogroup"] > button p {{ font-weight:600; letter-spacing:0.3px; color:#344054 !important; }}
+  .st-key-f_empresa [role="radiogroup"] > button::before {{ content:""; width:9px; height:9px; border-radius:50%;
+        margin-right:8px; flex:none; background:#2a78d6; box-shadow:0 0 0 3px rgba(42,120,214,0.15); }}
+  .st-key-f_empresa [role="radiogroup"] > button:nth-child(2)::before {{ background:#eb6834;
+        box-shadow:0 0 0 3px rgba(235,104,52,0.15); }}
+  .st-key-f_empresa [role="radiogroup"] > button:nth-child(3)::before {{
+        background:linear-gradient(135deg, #2a78d6 50%, #eb6834 50%); box-shadow:0 0 0 3px rgba(27,94,32,0.12); }}
   .st-key-f_empresa [role="radiogroup"] > button:nth-child(1) {{ grid-column:1; grid-row:1; }}
   .st-key-f_empresa [role="radiogroup"] > button:nth-child(2) {{ grid-column:1; grid-row:2; }}
-  .st-key-f_empresa [role="radiogroup"] > button:nth-child(3) {{ grid-column:2; grid-row:1 / span 2; height:auto; }}
-  .st-key-f_empresa [role="radiogroup"] > button[data-selected="true"] {{
-        background:{VERDE} !important; border-color:{VERDE} !important; }}
-  .st-key-f_empresa [role="radiogroup"] > button[data-selected="true"] p {{ color:#fff !important; font-weight:600; }}
-  /* Año: 6 por fila (Todos + 5 años arriba, el resto abajo) */
-  .st-key-f_anio [role="toolbar"], .st-key-f_anio [role="radiogroup"] {{ display:grid !important;
-        grid-template-columns:repeat(6, minmax(3.6rem, max-content)); gap:6px; overflow:visible !important; }}
-  .st-key-f_anio button {{ margin:0 !important; justify-content:center; }}
-  /* Naturaleza: 2 x 2 */
+  .st-key-f_empresa [role="radiogroup"] > button:nth-child(3) {{ grid-column:2; grid-row:1 / span 2; height:auto;
+        min-width:6.5rem; justify-content:center; flex-direction:column; gap:4px; }}
+  .st-key-f_empresa [role="radiogroup"] > button:nth-child(3)::before {{ margin-right:0; }}
+  .st-key-barra_filtros .st-key-f_empresa [role="radiogroup"] > button:is([data-selected="true"],[aria-checked="true"],[kind$="Active"]) {{ background:var(--acento) !important;
+        border-color:var(--acento) !important; box-shadow:0 4px 12px -4px var(--acento); }}
+  .st-key-barra_filtros .st-key-f_empresa [role="radiogroup"] > button:is([data-selected="true"],[aria-checked="true"],[kind$="Active"])::before {{ background:#fff !important;
+        box-shadow:0 0 0 3px rgba(255,255,255,0.35) !important; }}
+  .st-key-barra_filtros .st-key-f_empresa [role="radiogroup"] > button:is([data-selected="true"],[aria-checked="true"],[kind$="Active"]) p {{ color:#fff !important; }}
+
+  /* Año y mes: cada uno en un "riel" gris claro; la ficha elegida resalta encima */
+  .st-key-f_anio [role="toolbar"], .st-key-f_anio [role="radiogroup"],
+  [class*="st-key-f_mes"] [role="toolbar"], [class*="st-key-f_mes"] [role="radiogroup"] {{
+        background:#F1F4F0; border-radius:12px; padding:4px; gap:3px !important; overflow:visible !important; }}
+  .st-key-f_anio [role="toolbar"], .st-key-f_anio [role="radiogroup"] {{ display:grid !important; width:fit-content;
+        grid-template-columns:repeat(6, minmax(3.7rem, max-content)); }}
+  [class*="st-key-f_mes"] [role="toolbar"], [class*="st-key-f_mes"] [role="radiogroup"] {{ display:flex !important;
+        flex-wrap:wrap; width:fit-content; }}
+  .st-key-f_anio button, [class*="st-key-f_mes"] button {{ margin:0 !important; justify-content:center;
+        background:transparent !important; border-color:transparent !important; }}
+  .st-key-f_anio button:hover, [class*="st-key-f_mes"] button:hover {{ background:#FFFFFF !important;
+        border-color:#E3E8E2 !important; }}
+  /* Naturaleza: 2 x 2 · Tipo de gasto: uno debajo del otro */
   .st-key-f_naturaleza [role="toolbar"] {{ display:grid !important; grid-template-columns:repeat(2, 1fr);
         gap:6px; overflow:visible !important; width:fit-content; }}
   .st-key-f_naturaleza [role="toolbar"] > button {{ width:100%; margin:0 !important; }}
-  /* Tipo de gasto: Nómina y Terceros uno debajo del otro */
   .st-key-f_tipo [role="toolbar"] {{ display:grid !important; grid-template-columns:7.5rem; gap:6px;
         width:fit-content; overflow:visible !important; }}
   .st-key-f_tipo [role="toolbar"] > button {{ width:100%; margin:0 !important; }}
+
+  /* Resumen de lo que se está viendo (abajo del panel) */
+  .resumen {{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding-top:0.6rem;
+              border-top:1px dashed #E3E8E2; }}
+  .resumen .lbl {{ font-size:0.66rem; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+                   color:#7A867C; margin-right:2px; }}
+  .resumen .ch {{ display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px;
+                  background:#F3F6F3; border:1px solid #E6EBE5; font-size:0.8rem; color:#344054; white-space:nowrap; }}
+  .resumen .ch .pt {{ width:8px; height:8px; border-radius:50%; background:var(--acento); }}
+  .resumen .ch.per {{ background:#EAF3EA; border-color:#CFE3D0; color:{VERDE}; font-weight:600; }}
+  a.restablecer {{ display:inline-block; margin-top:0.55rem; font-size:0.8rem; font-weight:600; color:#5B6B5E !important;
+                   text-decoration:none; white-space:nowrap; padding:4px 11px; border-radius:999px; border:1px solid #E3E8E2; }}
+  a.restablecer:hover {{ color:{VERDE} !important; border-color:#9CC79F; background:#F7FBF7; }}
 
   /* Tarjetas de indicadores */
   [data-testid="stMetric"] {{ background:#fff; border:1px solid #E5E7EB; border-left:5px solid var(--acento);
@@ -293,7 +333,7 @@ encabezado = st.container()
 
 # ---- Filtros arriba, en dos bloques: PERIODO (cuándo) y ALCANCE (qué se mira) ----
 with st.container(key="barra_filtros"):
-    col_alcance, col_periodo = st.columns([0.8, 1.5], gap="small")
+    col_alcance, col_periodo = st.columns([0.85, 1.5], gap="medium")
     bloque_periodo = col_periodo.container(key="bloque_periodo")
     bloque_alcance = col_alcance.container(key="bloque_alcance")
 
@@ -351,11 +391,19 @@ with st.container(key="barra_filtros"):
                 previo = f"{NOMBRE_MES[n_m - 1]}-{anio}" if n_m > 1 else f"Dic-{anio - 1}"
                 frase = (f"{mes_txt}-{anio} · se compara con {previo} (mes anterior) y "
                          f"{mes_txt}-{anio - 1} (año anterior)")
-        r1, r2 = st.columns([5, 1.1], gap="small", vertical_alignment="center")
-        r1.markdown(f'<div class="frase">📌 {frase}</div>', unsafe_allow_html=True)
-        # Restablecer = volver a abrir la página (empieza limpia; la sesión de Google se mantiene)
-        r2.markdown('<a class="restablecer" href="./" target="_self" '
-                    'title="Vuelve todos los filtros a como abre la app">↺ Restablecer</a>', unsafe_allow_html=True)
+
+    # Resumen de lo que se está viendo: así el gerente lee el contexto de un vistazo
+    nombre_emp = "Grupo (AGROCACAY + KAHAI)" if vista == GRUPO else vista
+    tipos_txt = " + ".join(tipos) if tipos else "Sin tipo de gasto"
+    nat_txt = " · ".join(naturalezas) if naturalezas else "Sin naturaleza"
+    r1, r2 = st.columns([8, 1.2], gap="small", vertical_alignment="bottom")
+    r1.markdown(f'<div class="resumen"><span class="lbl">Viendo</span>'
+                f'<span class="ch"><span class="pt"></span>{nombre_emp}</span>'
+                f'<span class="ch">{tipos_txt}</span><span class="ch">{nat_txt}</span>'
+                f'<span class="ch per">📅 {frase}</span></div>', unsafe_allow_html=True)
+    # Restablecer = volver a abrir la página (empieza limpia; la sesión de Google se mantiene)
+    r2.markdown('<div style="text-align:right"><a class="restablecer" href="./" target="_self" '
+                'title="Vuelve todos los filtros a como abre la app">↺ Restablecer</a></div>', unsafe_allow_html=True)
 
 df = base_empresa[base_empresa["naturaleza"].isin(naturalezas) & base_empresa["tipo"].isin(tipos)]
 
@@ -1208,198 +1256,6 @@ with pest[2]:
             #  por eso arriba se muestra el costo por árbol vivo, que se lee directo.)
             arb_anio = datos_cu.groupby("anio")["arb_total_vivos"].max()
 
-            def por_arbol(lista, a):
-                arb_a = arb_anio.get(a)
-                return suma(cu, lista) / arb_a if arb_a else None
-            # Columnas: mes / acumulado / acumulado año anterior  (o, en año completo:
-            # año / mismo periodo año anterior / año anterior completo)
-            if anual:
-                cols_pa = [(etq_acum, acum, anio), (etq_acum_ant, acum_ant, anio - 1)]
-                if num_mes < 12:
-                    cols_pa.append((f"Año {anio - 1} completo", anio_ant_completo, anio - 1))
-                i_act, i_ant = 0, 1
-            else:
-                cols_pa = [(etiqueta(mes), [mes], anio), (etq_acum, acum, anio), (etq_acum_ant, acum_ant, anio - 1)]
-                i_act, i_ant = 1, 2
-            totales = [por_arbol(lista, a) for _, lista, a in cols_pa]
-            k = st.columns(3)
-            for i, (nombre, _, _) in enumerate(cols_pa):
-                delta = (f"{porcentaje(variacion(totales[i_act], totales[i_ant]))} vs {cols_pa[i_ant][0]}"
-                         if i == i_act else None)
-                k[i].metric(f"Costo por árbol vivo — {nombre}", unitario(totales[i]), delta, delta_color="inverse")
-            # Separado en mano de obra y otros costos
-            filas_pa = []
-            for nombre in [x for x in BLOQUES if x in set(cu["bloque"])] + ["TOTAL"]:
-                cb = cu if nombre == "TOTAL" else cu[cu["bloque"] == nombre]
-                vals = [suma(cb, lista) / arb_anio.get(a) if arb_anio.get(a) else None for _, lista, a in cols_pa]
-                fila = {"Concepto": nombre}
-                fila.update({cols_pa[i][0]: unitario(v) for i, v in enumerate(vals)})
-                fila["Variación"] = porcentaje(variacion(vals[i_act], vals[i_ant]))
-                filas_pa.append(fila)
-            st.dataframe(pd.DataFrame(filas_pa).style.apply(
-                lambda r: ["font-weight: bold" if (i == 0 and r.iloc[0] == "TOTAL") else ""
-                           for i, _ in enumerate(r)], axis=1),
-                hide_index=True, width="stretch")
-            st.caption(f"Gasto del periodo ÷ árboles vivos del año (hoja ARB_TOTAL: "
-                       f"{pesos(arb_anio.get(anio))} en {anio}, {pesos(arb_anio.get(anio - 1))} en {anio - 1}).")
-
-            # ---- FICHA POR RUBRO (vista de gerencia): costo por árbol al año, por componente y por lote
-            st.subheader("🔎 Ficha por rubro")
-            st.caption("Lectura directa: **gasto del año ÷ árboles**. Las partes suman el total, se puede "
-                       "comparar año contra año y filtrar por lote.")
-            lotes_cu = sorted(datos_cu.loc[datos_cu["censo"] > 0, "ubicacion"].unique(), key=orden_lote)
-            gasto_rubro = cu.groupby("rubro")["valor"].sum().sort_values(ascending=False)
-            fr1, fr2, fr3 = st.columns([1.3, 1.3, 2.4])
-            rubro_f = fr1.selectbox("Rubro", list(gasto_rubro.index),
-                                    index=list(gasto_rubro.index).index("MIAR") if "MIAR" in gasto_rubro.index else 0,
-                                    key="ficha_rubro")
-            ceco_f = fr2.multiselect("CECO", sorted(cu.loc[cu["rubro"] == rubro_f, "ceco"].unique()),
-                                     placeholder="Todos", key="ficha_ceco")
-            lote_f = fr3.multiselect("Lote", lotes_cu, placeholder="Toda la finca (todos los lotes y lo general)",
-                                     key="ficha_lote",
-                                     help="Sin lote elegido: gasto total del rubro ÷ árboles vivos del año. "
-                                          "Con lotes: solo el gasto cargado a esos lotes ÷ sus árboles del censo.")
-            fi = cu[cu["rubro"] == rubro_f]
-            if ceco_f:
-                fi = fi[fi["ceco"].isin(ceco_f)]
-            fi = fi.assign(componente=componente_gerencial(fi))
-            if lote_f:
-                fi_l = fi[fi["ubicacion"].isin(lote_f)]
-                # árboles de la base: censo de los lotes elegidos, cada año
-                arboles_base = (datos_cu[datos_cu["ubicacion"].isin(lote_f)]
-                                .groupby(["anio", "ubicacion"])["censo"].max().groupby("anio").sum())
-                texto_base = f"árboles del censo de {', '.join(lote_f) if len(lote_f) <= 4 else str(len(lote_f)) + ' lotes'}"
-            else:
-                fi_l = fi
-                arboles_base = arb_anio
-                texto_base = "árboles vivos de la finca (hoja ARB_TOTAL)"
-            anios_f = sorted(fi_l["anio"].dropna().unique().astype(int))
-
-            if fi_l.empty or not anios_f:
-                st.info("No hay gasto de este rubro con estos filtros.")
-            else:
-                gasto_anio = fi_l.groupby("anio")["valor"].sum()
-                cpa = (gasto_anio / arboles_base.reindex(gasto_anio.index).replace(0, np.nan))
-                a_ref = anio if anio in cpa.index else anios_f[-1]
-                mo = fi_l[fi_l["bloque"].isin(["Mano de obra (nómina)", "Mano de obra al contrato"])]
-                pct_mo = None
-                if gasto_anio.get(a_ref):
-                    pct_mo = mo.loc[mo["anio"] == a_ref, "valor"].sum() / gasto_anio.get(a_ref)
-                # ¿El año de referencia está completo? (si no, se compara contra los mismos meses del año anterior)
-                ult_mes = int(datos_cu.loc[datos_cu["anio"] == a_ref, "mes_num"].max())
-                parcial = ult_mes < 12
-                hasta = f" (Ene–{NOMBRE_MES[ult_mes]})" if parcial else ""
-                g_prev = fi_l[(fi_l["anio"] == a_ref - 1) & (fi_l["mes_num"] <= ult_mes)]["valor"].sum()
-                arb_prev = arboles_base.get(a_ref - 1)
-                cpa_prev = g_prev / arb_prev if arb_prev and g_prev else None
-                k1, k2, k3, k4 = st.columns(4)
-                k1.metric(f"Costo por árbol {a_ref}{hasta}", unitario(cpa.get(a_ref)),
-                          f"{porcentaje(variacion(cpa.get(a_ref), cpa_prev))} vs {a_ref - 1}{hasta}"
-                          if cpa_prev else None, delta_color="inverse")
-                k2.metric(f"Gasto {a_ref}{hasta}", millones(gasto_anio.get(a_ref, 0)))
-                k3.metric("Árboles de la base", pesos(arboles_base.get(a_ref)), help=texto_base)
-                k4.metric("Peso de la mano de obra", "—" if pct_mo is None else f"{pct_mo:.0%}",
-                          help="Mano de obra de nómina + al contrato, como % del gasto del rubro")
-                if parcial:
-                    st.caption(f"{a_ref} va hasta {NOMBRE_MES[ult_mes]}: en las tablas de abajo su valor es parcial.")
-
-                t_comp, t_lote = st.tabs(["👷 Mano de obra vs otros costos", "📍 Por lote"])
-                cols_anio = [str(a) for a in anios_f]
-
-                with t_comp:
-                    comp = fi_l.groupby(["componente", "anio"])["valor"].sum().unstack("anio")
-                    comp = comp.div(arboles_base.reindex(comp.columns).replace(0, np.nan), axis=1)
-                    orden_c = [c for c in ["Mano de obra (nómina)", "Mano de obra al contrato"] if c in comp.index]
-                    resto = [c for c in comp.index if c not in orden_c and c not in ("Otros (resto)",
-                                                                                     "Intercompañía", "Financiero",
-                                                                                     "Inversión")]
-                    orden_c += sorted(resto, key=lambda c: -comp.loc[c].fillna(0).sum())
-                    orden_c += [c for c in ["Otros (resto)", "Intercompañía", "Financiero", "Inversión"]
-                                if c in comp.index]
-                    comp = comp.reindex(orden_c)
-                    # para la variación: mismo tramo de meses del año anterior (si el último año va incompleto)
-                    a_ult, a_pen = anios_f[-1], (anios_f[-2] if len(anios_f) >= 2 else None)
-                    prev = fi_l[fi_l["anio"] == a_pen]
-                    if a_ult == a_ref and parcial:
-                        prev = prev[prev["mes_num"] <= ult_mes]
-                    comp_prev = (prev.groupby("componente")["valor"].sum()
-                                 / (arboles_base.get(a_pen) or np.nan)).reindex(comp.index)
-                    comp = comp.assign(_prev=comp_prev)
-                    filas_c = []
-                    n_mo = len([c for c in orden_c if c.startswith("Mano de obra")])
-                    sub_mo = comp.iloc[:n_mo].sum(min_count=1)
-                    for i, (nombre, fila) in enumerate(comp.iterrows()):
-                        filas_c.append([("   " if nombre.startswith("Mano de obra") else "") + nombre] + list(fila))
-                        if n_mo and i == n_mo - 1:
-                            filas_c.append(["Subtotal mano de obra"] + list(sub_mo))
-                    filas_c.append(["TOTAL"] + list(comp.sum(min_count=1)))
-                    tabla_c = pd.DataFrame(filas_c, columns=["Componente"] + cols_anio + ["_prev"])
-                    if a_pen is not None:
-                        tramo = f" ({hasta.strip(' ()')})" if (a_ult == a_ref and parcial) else ""
-                        tabla_c[f"Var. {a_ult} vs {a_pen}{tramo}"] = [porcentaje(variacion(a, b)) for a, b in
-                                                                       zip(tabla_c[str(a_ult)], tabla_c["_prev"])]
-                    tabla_c = tabla_c.drop(columns="_prev")
-                    comp = comp.drop(columns="_prev")
-                    vis = tabla_c.copy()
-                    for c in cols_anio:
-                        vis[c] = vis[c].map(unitario)
-                    # Fila del divisor: con qué número de árboles se dividió cada año
-                    nombre_div = "Divisor · árboles censo lotes" if lote_f else "Divisor · árboles vivos"
-                    fila_div = {"Componente": nombre_div}
-                    fila_div.update({c: pesos(arboles_base.get(int(c))) if arboles_base.get(int(c)) else "—"
-                                     for c in cols_anio})
-                    vis = pd.concat([vis, pd.DataFrame([fila_div])], ignore_index=True).fillna("")
-                    if parcial and str(a_ref) in vis.columns:
-                        vis = vis.rename(columns={str(a_ref): f"{a_ref}{hasta}"})
-                    negrita = lambda r: (["font-weight: bold" for _ in r]
-                                         if r.iloc[0] in ("TOTAL", "Subtotal mano de obra") else
-                                         ["font-style: italic; color: #5B6470; background-color: #F6F8F5" for _ in r]
-                                         if str(r.iloc[0]).startswith("Divisor") else ["" for _ in r])
-                    st.dataframe(vis.style.apply(negrita, axis=1), hide_index=True, width="stretch")
-                    st.caption(f"Pesos por árbol al año = gasto del componente ÷ {texto_base}. "
-                               "'Otros costos' se abre en sus 3 detalles más grandes.")
-                    # gráfica apilada: cuánto de cada peso por árbol es mano de obra
-                    fig_c = go.Figure()
-                    paleta_c = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6", "#008300", "#52514e"]
-                    for i, (nombre, fila) in enumerate(comp.iterrows()):
-                        fig_c.add_bar(x=cols_anio, y=fila.values, name=nombre, marker_color=paleta_c[i % len(paleta_c)],
-                                      hovertemplate=nombre + "<br>%{x}: $%{y:,.0f} por árbol<extra></extra>")
-                    fig_c.update_layout(barmode="stack", height=340, separators=",.", bargap=0.35,
-                                        title=f"{rubro_f}: pesos por árbol al año",
-                                        legend=dict(orientation="h", y=1.18, x=0), margin=dict(l=10, r=10, t=80, b=10),
-                                        plot_bgcolor="rgba(0,0,0,0)", yaxis=dict(gridcolor="rgba(128,128,128,0.2)"))
-                    st.plotly_chart(fig_c, width="stretch")
-
-                with t_lote:
-                    en_lote = fi[fi["ubicacion"].isin(lotes_cu)]
-                    if lote_f:
-                        en_lote = en_lote[en_lote["ubicacion"].isin(lote_f)]
-                    if en_lote.empty:
-                        st.info("Este rubro no tiene gasto cargado a lotes (todo es general de la finca).")
-                    else:
-                        g_l = en_lote.groupby(["ubicacion", "anio"])["valor"].sum()
-                        a_l = (datos_cu[datos_cu["ubicacion"].isin(g_l.index.get_level_values(0))]
-                               .groupby(["ubicacion", "anio"])["censo"].max())
-                        t_l = (g_l / a_l.reindex(g_l.index).replace(0, np.nan)).unstack("anio")
-                        t_l = t_l.reindex(sorted(t_l.index, key=orden_lote))
-                        t_l.columns = [str(int(c)) for c in t_l.columns]
-                        gasto_l = en_lote[en_lote["anio"] == a_ref].groupby("ubicacion")["valor"].sum()
-                        vis_l = t_l.copy()
-                        for c in vis_l.columns:
-                            vis_l[c] = vis_l[c].map(unitario)
-                        vis_l.insert(0, f"Gasto {a_ref}", gasto_l.reindex(t_l.index).fillna(0).map(millones))
-                        vis_l.insert(1, f"Árboles {a_ref}", a_l.xs(a_ref, level="anio").reindex(t_l.index).map(pesos)
-                                     if a_ref in a_l.index.get_level_values("anio") else "—")
-                        st.dataframe(vis_l.reset_index().rename(columns={"ubicacion": "Lote"}),
-                                     hide_index=True, width="stretch", height=min(38 * (len(vis_l) + 1) + 4, 520))
-                        sin_lote = fi[~fi["ubicacion"].isin(lotes_cu) & (fi["anio"] == a_ref)]["valor"].sum()
-                        st.caption(f"Pesos por árbol al año = gasto cargado al lote ÷ árboles del lote en el censo de ese año. "
-                                   f"Además, {millones(sin_lote)} de {a_ref} no están cargados a ningún lote "
-                                   "(compras generales de insumos, maquinaria, herramientas): esos solo entran en la vista "
-                                   "de toda la finca.")
-
-
-            st.divider()
             # ---- Tabla ponderada (igual a la de la app de campo / Power BI)
             st.subheader("Costo unitario ponderado")
             st.caption("Cada mes: costo ÷ divisor de su regla (árboles del censo, kg cosechados, sitios sembrados "
@@ -1677,7 +1533,7 @@ with pest[2]:
                         if abs(serie[a_a] - serie[b_a]) >= 0.25:
                             st.warning(f"**Cambio de base en {int(a_a)}:** el gasto cargado a lotes pasó de "
                                        f"{serie[b_a]:.0%} a {serie[a_a]:.0%}. El ponderado de {int(a_a)} no es comparable "
-                                       f"con el de {int(b_a)}: para comparar años use el costo por árbol de la Ficha.",
+                                       f"con el de {int(b_a)}: para comparar años use el costo por árbol vivo (más abajo).",
                                        icon="⚠️")
 
 
@@ -1746,6 +1602,44 @@ with pest[2]:
                 # El Excel se arma solo al tocar el botón (antes se armaba en cada clic: unos 20 segundos)
                 st.download_button("Descargar costo unitario en Excel", excel_cu,
                                    file_name=f"Costo_unitario_AGROCACAY_{'anual' if eje == 'Año' else 'mensual'}.xlsx")
+
+            st.divider()
+            st.subheader("Costo por árbol vivo · todos los rubros")
+
+            def por_arbol(lista, a):
+                arb_a = arb_anio.get(a)
+                return suma(cu, lista) / arb_a if arb_a else None
+            # Columnas: mes / acumulado / acumulado año anterior  (o, en año completo:
+            # año / mismo periodo año anterior / año anterior completo)
+            if anual:
+                cols_pa = [(etq_acum, acum, anio), (etq_acum_ant, acum_ant, anio - 1)]
+                if num_mes < 12:
+                    cols_pa.append((f"Año {anio - 1} completo", anio_ant_completo, anio - 1))
+                i_act, i_ant = 0, 1
+            else:
+                cols_pa = [(etiqueta(mes), [mes], anio), (etq_acum, acum, anio), (etq_acum_ant, acum_ant, anio - 1)]
+                i_act, i_ant = 1, 2
+            totales = [por_arbol(lista, a) for _, lista, a in cols_pa]
+            k = st.columns(3)
+            for i, (nombre, _, _) in enumerate(cols_pa):
+                delta = (f"{porcentaje(variacion(totales[i_act], totales[i_ant]))} vs {cols_pa[i_ant][0]}"
+                         if i == i_act else None)
+                k[i].metric(f"Costo por árbol vivo — {nombre}", unitario(totales[i]), delta, delta_color="inverse")
+            # Separado en mano de obra y otros costos
+            filas_pa = []
+            for nombre in [x for x in BLOQUES if x in set(cu["bloque"])] + ["TOTAL"]:
+                cb = cu if nombre == "TOTAL" else cu[cu["bloque"] == nombre]
+                vals = [suma(cb, lista) / arb_anio.get(a) if arb_anio.get(a) else None for _, lista, a in cols_pa]
+                fila = {"Concepto": nombre}
+                fila.update({cols_pa[i][0]: unitario(v) for i, v in enumerate(vals)})
+                fila["Variación"] = porcentaje(variacion(vals[i_act], vals[i_ant]))
+                filas_pa.append(fila)
+            st.dataframe(pd.DataFrame(filas_pa).style.apply(
+                lambda r: ["font-weight: bold" if (i == 0 and r.iloc[0] == "TOTAL") else ""
+                           for i, _ in enumerate(r)], axis=1),
+                hide_index=True, width="stretch")
+            st.caption(f"Gasto del periodo ÷ árboles vivos del año (hoja ARB_TOTAL: "
+                       f"{pesos(arb_anio.get(anio))} en {anio}, {pesos(arb_anio.get(anio - 1))} en {anio - 1}).")
 
 
 # ===============================================================
