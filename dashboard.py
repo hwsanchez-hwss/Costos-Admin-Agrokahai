@@ -90,9 +90,12 @@ st.markdown(f"""
 
   /* ===== Panel de filtros: una sola tarjeta ejecutiva ===== */
   .st-key-barra_filtros {{ position:relative; overflow:hidden; margin-top:0.7rem; background:#FFFFFF;
-        border:1px solid #E3E8E2; border-radius:16px; padding:0.95rem 1.3rem 0.85rem 1.3rem;
-        box-shadow:0 1px 2px rgba(16,24,40,0.04), 0 10px 28px -14px rgba(16,24,40,0.18); gap:0.55rem; }}
-  .st-key-barra_filtros::before {{ content:""; position:absolute; left:0; right:0; top:0; height:4px;
+        border:1px solid #E3E8E2; border-radius:16px; padding:0.75rem 1.2rem 0.6rem 1.2rem;
+        box-shadow:0 1px 2px rgba(16,24,40,0.04), 0 10px 28px -14px rgba(16,24,40,0.18); gap:0.25rem; }}
+  .st-key-barra_filtros [data-testid="stHorizontalBlock"] {{ gap:0.6rem; }}
+  .st-key-barra_filtros [data-testid="stVerticalBlock"] {{ gap:0.25rem; }}
+  .st-key-barra_filtros [data-testid="stElementContainer"] {{ margin:0; }}
+  .st-key-barra_filtros::before {{ content:""; position:absolute; left:0; right:0; top:0; height:3px;
         background:linear-gradient(90deg, {VERDE} 0%, #43A047 55%, var(--acento) 100%); }}
   .st-key-bloque_alcance, .st-key-bloque_periodo {{ gap:0.55rem; }}
   .st-key-bloque_alcance [data-testid="stVerticalBlock"],
@@ -106,12 +109,14 @@ st.markdown(f"""
         mask-image:none !important; -webkit-mask-image:none !important; }}
   .st-key-barra_filtros [data-testid="stButtonGroup"] {{ overflow:visible !important; }}
   /* Títulos de cada filtro: pequeños, en mayúsculas, discretos */
-  .st-key-barra_filtros [data-testid="stWidgetLabel"] {{ margin-bottom:0.15rem; min-height:0; }}
+  .st-key-barra_filtros [data-testid="stWidgetLabel"] {{ margin-bottom:0.05rem; min-height:0; height:auto; }}
+  .st-key-barra_filtros [data-testid="stWidgetLabel"] label {{ min-height:0; }}
+  .st-key-barra_filtros [data-testid="stTooltipIcon"] svg {{ width:0.85rem; height:0.85rem; }}
   .st-key-barra_filtros label p {{ font-size:0.66rem !important; font-weight:700 !important; letter-spacing:1px;
         text-transform:uppercase; color:#7A867C !important; }}
   /* Botones: fichas suaves; la elegida, sólida y con sombra */
   .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button {{ border-radius:9px !important; border:1px solid #E3E8E2 !important;
-        background:#F7F9F7 !important; min-height:2.05rem; padding:0.15rem 0.85rem !important;
+        background:#F7F9F7 !important; min-height:1.8rem; padding:0.05rem 0.8rem !important;
         transition:background .15s, border-color .15s, box-shadow .15s, transform .15s; }}
   .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button p {{ color:#344054 !important; font-weight:500; font-size:0.86rem; }}
   .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button:hover {{ background:#FFFFFF !important;
@@ -128,7 +133,7 @@ st.markdown(f"""
   /* Empresa: fichas grandes con el punto de color de cada empresa; Grupo ocupa el alto completo */
   .st-key-f_empresa [role="radiogroup"] {{ display:grid !important; grid-template-columns:repeat(3, max-content);
         gap:6px; overflow:visible !important; width:fit-content; }}
-  .st-key-f_empresa [role="radiogroup"] > button {{ border-radius:10px !important; width:100%; min-width:0; min-height:2.1rem;
+  .st-key-f_empresa [role="radiogroup"] > button {{ border-radius:10px !important; width:100%; min-width:0; min-height:1.85rem;
         padding:0.1rem 0.8rem !important;
         border:1px solid #E3E8E2 !important; margin:0 !important; background:#F7F9F7 !important; justify-content:flex-start; }}
   .st-key-f_empresa [role="radiogroup"] > button p {{ font-weight:600; letter-spacing:0.3px; color:#344054 !important; }}
@@ -148,7 +153,7 @@ st.markdown(f"""
   /* Año y mes: cada uno en un "riel" gris claro; la ficha elegida resalta encima */
   .st-key-f_anio [role="toolbar"], .st-key-f_anio [role="radiogroup"],
   [class*="st-key-f_mes"] [role="toolbar"], [class*="st-key-f_mes"] [role="radiogroup"] {{
-        background:#F1F4F0; border-radius:12px; padding:4px; gap:3px !important; overflow:visible !important; }}
+        background:#F1F4F0; border-radius:11px; padding:3px; gap:3px !important; overflow:visible !important; }}
   .st-key-f_anio [role="toolbar"], .st-key-f_anio [role="radiogroup"] {{ display:flex !important; flex-wrap:wrap;
         width:fit-content; }}
   [class*="st-key-f_mes"] [role="toolbar"], [class*="st-key-f_mes"] [role="radiogroup"] {{ display:flex !important;
@@ -157,7 +162,7 @@ st.markdown(f"""
   .st-key-f_anio :is([role="toolbar"],[role="radiogroup"]) > button:first-child,
   [class*="st-key-f_mes"] :is([role="toolbar"],[role="radiogroup"]) > button:first-child {{
         margin-right:6px !important; }}
-  .st-key-f_anio button, [class*="st-key-f_mes"] button {{ min-height:1.95rem !important; padding:0.1rem 0.6rem !important; }}
+  .st-key-f_anio button, [class*="st-key-f_mes"] button {{ min-height:1.7rem !important; padding:0.02rem 0.6rem !important; }}
   .st-key-f_anio button p, [class*="st-key-f_mes"] button p {{ font-size:0.82rem !important; }}
   .st-key-f_anio button, [class*="st-key-f_mes"] button {{ margin:0 !important; justify-content:center;
         background:transparent !important; border-color:transparent !important; }}
@@ -180,11 +185,11 @@ st.markdown(f"""
                   background:#F3F6F3; border:1px solid #E6EBE5; font-size:0.76rem; color:#344054; white-space:nowrap; }}
   .resumen .ch .pt {{ width:8px; height:8px; border-radius:50%; background:var(--acento); }}
   .resumen .ch.per {{ background:#EAF3EA; border-color:#CFE3D0; color:{VERDE}; font-weight:600; }}
-  .periodo {{ display:flex; justify-content:flex-end; align-items:center; gap:8px; flex-wrap:wrap; padding-bottom:6px; }}
+  .periodo {{ display:flex; justify-content:flex-end; align-items:center; gap:8px; flex-wrap:wrap; padding-bottom:3px; }}
   .periodo .lbl {{ font-size:0.66rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:#7A867C; }}
-  .periodo .ch {{ padding:4px 12px; border-radius:999px; background:#EAF3EA; border:1px solid #CFE3D0; color:{VERDE};
+  .periodo .ch {{ padding:3px 11px; border-radius:999px; background:#EAF3EA; border:1px solid #CFE3D0; color:{VERDE};
                   font-weight:600; font-size:0.8rem; white-space:nowrap; }}
-  a.restablecer {{ display:inline-block; margin-bottom:4px; font-size:0.76rem; font-weight:600; color:#5B6B5E !important;
+  a.restablecer {{ display:inline-block; margin-bottom:2px; font-size:0.76rem; font-weight:600; color:#5B6B5E !important;
                    text-decoration:none; white-space:nowrap; padding:4px 11px; border-radius:999px; border:1px solid #E3E8E2; }}
   a.restablecer:hover {{ color:{VERDE} !important; border-color:#9CC79F; background:#F7FBF7; }}
 
