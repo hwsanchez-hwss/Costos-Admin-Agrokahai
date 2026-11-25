@@ -14,6 +14,7 @@ Reglas (se leen de la hoja "⚙ CONFIG" del Excel, no están escritas aquí):
                          asignación "Cosecha"...): kg cosechados en TODO el año en toda la finca
                          (la fruta que pasa por poscosecha).
                        - sin kg: el costo unitario queda EN BLANCO (leyenda "Cosecha/SinDato" del ⚙ CONFIG).
+                       - Todo el CECO COSECHA usa esta regla (también Maq. y Equipo, que en otros CECO va por árboles).
     SITIOS_SIEMBRA  -> sitios sembrados en el año (hoja ARB_TOTAL, tabla de la derecha)
     SYRS_ARBOLES    -> árboles sembrados/resembrados del lote en el año (hoja SYRS)
     ARB_TotalVivos  -> total de sitios vivos del año (hoja ARB_TOTAL)
@@ -44,6 +45,7 @@ from openpyxl import load_workbook
 import config as C
 
 REGLAS_VALIDAS = ["PXN_KG", "SYRS_ARBOLES", "SITIOS_SIEMBRA", "CENSO", "ARB_TOTALVIVOS"]
+CECOS_POR_KG = {"cosecha"}     # CECO cuyo gasto se divide entero por kg cosechados (regla PXN_KG)
 
 
 def clave(v):
@@ -145,6 +147,10 @@ def calcular(costos, ref):
 
     # Regla del rubro (si el rubro no está en CONFIG -> "—", que usa ARB_TotalVivos)
     d["regla_divisor"] = d["rubro"].map(lambda r: ref["reglas"].get(clave(r), "—"))
+    # En el CECO COSECHA todo es de la cosecha/poscosecha (ej. Maq. y Equipo = mantenimiento del secador y
+    # el generador): se divide por kg cosechados aunque el rubro tenga otra regla en ⚙ CONFIG.
+    if "ceco" in d.columns:
+        d.loc[d["ceco"].map(clave).isin(CECOS_POR_KG), "regla_divisor"] = "PXN_KG"
 
     pares = list(zip(anio, k_m, k_u))
     # Kg para la regla PXN_KG (ver arriba). origen_kg dice de dónde salió cada divisor.
