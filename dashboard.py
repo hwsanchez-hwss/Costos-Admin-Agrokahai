@@ -1424,9 +1424,9 @@ with pest[2]:
 
             # ---- Tabla ponderada (igual a la de la app de campo / Power BI)
             st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.1rem'>"
-                        "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Costo unitario ponderado</span>"
-                        "<span style='font-size:0.8rem;color:#6B7280'>costo ÷ divisor de su regla, promediado según el "
-                        "gasto (medida de Power BI)</span></div>", unsafe_allow_html=True)
+                        "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Costo unitario</span>"
+                        "<span style='font-size:0.8rem;color:#6B7280'>gasto ÷ unidades de su regla (árboles, kg o sitios "
+                        "sembrados) · debajo de cada valor, con qué se dividió</span></div>", unsafe_allow_html=True)
             # Recorrido como en una junta: la empresa ya está en el encabezado; aquí se baja
             # CECO → Rubro → Actividad → Ubicación. La tabla muestra siempre el SIGUIENTE nivel
             # al último elegido (sin CECO elegido: una fila por CECO; con CECO: una por rubro; etc.).
@@ -1452,8 +1452,14 @@ with pest[2]:
             else:
                 ver, por = "Detalle", "descripcion"
             ruta = " › ".join([titulo_vista] + elegidos_n)
-            st.markdown(f'<div style="font-size:0.82rem;color:#374151;margin:-0.35rem 0 0.1rem">📍 <b>{ruta}</b>'
-                        f' &nbsp;·&nbsp; filas por <b>{ver}</b></div>', unsafe_allow_html=True)
+            rc1, rc2 = st.columns([4, 1.3], vertical_alignment="center")
+            rc1.markdown(f'<div style="font-size:0.82rem;color:#374151;margin:-0.35rem 0 0.1rem">📍 <b>{ruta}</b>'
+                         f' &nbsp;·&nbsp; filas por <b>{ver}</b></div>', unsafe_allow_html=True)
+            # El costo real es gasto ÷ unidades. El ponderado de Power BI queda solo para cuadrar con el informe viejo.
+            ver_pond = rc2.toggle("Ver ponderado (Power BI)", key="cu_pond", value=False,
+                                  help="Muestra la medida 'Costo Unitario Ponderado' de Power BI (promedio de los costos "
+                                       "de cada mes y lote, pesado por el gasto). No es el costo real por unidad: "
+                                       "úsela solo para cuadrar con ese informe.")
 
             if eje == "Mes":
                 per_cu = sorted(base["periodo"].unique())
@@ -1490,6 +1496,59 @@ with pest[2]:
                     t.insert(1, "% del gasto", t["Gasto total"] / b["valor"].sum())
                     t.index.name = nombre_c
                     return t.reset_index()
+
+                def costo_directo(sub):
+                    """COSTO REAL de una celda: gasto ÷ unidades de su regla.
+                    - kg (PXN_KG): gasto ÷ kg cosechados (sin contar dos veces los kg de lotes y de la finca)
+                    - censo / SYRS: gasto cargado a lotes ÷ árboles de esos lotes, más lo general ÷ árboles vivos
+                    - sitios sembrados, árboles vivos: gasto ÷ ese número
+                    - si la celda mezcla reglas (ej. un CECO entero): gasto ÷ árboles vivos del año."""
+                    if sub is None or sub.empty:
+                        return np.nan
+                    o = sub["origen_divisor"].astype(str)
+                    sub = sub[~o.str.contains("CU en blanco") & ~o.str.startswith("Sin divisor")]
+                    if sub.empty:
+                        return np.nan
+                    arb = arb_anio.get(int(sub["anio"].iloc[0]))
+                    reglas = set(sub["regla_divisor"].map(norm_regla))
+                    if len(reglas) > 1:
+                        return sub["valor"].sum() / arb if arb else np.nan
+                    rg = reglas.pop()
+                    o = sub["origen_divisor"].astype(str)
+                    resp, prop = sub[o.str.startswith("Respaldo")], sub[~o.str.startswith("Respaldo")]
+                    v_resp = resp["valor"].sum() / arb if (len(resp) and arb) else 0
+                    if prop.empty:
+                        return v_resp if len(resp) and arb else np.nan
+                    if rg == "PXN_KG":
+                        u = kg_pxn(prop)
+                    elif rg == "SITIOS_SIEMBRA":
+                        u = prop["sitios_siembra"].max()
+                    elif rg == "CENSO":
+                        u = prop[prop["censo"] > 0].groupby("ubicacion")["censo"].max().sum()
+                    elif rg == "SYRS_ARBOLES":
+                        u = prop[prop["syrs_arboles"] > 0].groupby("ubicacion")["syrs_arboles"].max().sum()
+                    else:
+                        u = arb
+                    return (prop["valor"].sum() / u if u and u > 0 else np.nan) + v_resp
+
+                def armar_tabla_directo(b, por_c, nombre_c):
+                    """Misma forma que armar_tabla_cu, pero cada valor es el costo real (gasto ÷ unidades)."""
+                    xs = sorted(b["_x"].dropna().unique())
+                    filas = {k: {x: costo_directo(s_) for x, s_ in g_.groupby("_x")} for k, g_ in b.groupby(por_c)}
+                    t = pd.DataFrame.from_dict(filas, orient="index").reindex(columns=xs)
+                    t.loc["TOTAL"] = pd.Series({x: costo_directo(s_) for x, s_ in b.groupby("_x")})
+                    g = b.groupby(por_c)["valor"].sum()
+                    orden_g = list(g.sort_values(ascending=False).index)
+                    orden_g = [o for o in orden_g if not str(o).startswith("Otras (")] + \
+                              [o for o in orden_g if str(o).startswith("Otras (")]
+                    t = t.reindex([o for o in orden_g + ["TOTAL"] if o in t.index])
+                    t.columns = [etiqueta(c) for c in t.columns] if eje == "Mes" else [str(int(c)) for c in t.columns]
+                    t.insert(0, "Gasto total", g.reindex(t.index).fillna(b["valor"].sum()))
+                    t.insert(1, "% del gasto", t["Gasto total"] / b["valor"].sum())
+                    t.index.name = nombre_c
+                    return t.reset_index()
+
+                armar = armar_tabla_cu if ver_pond else armar_tabla_directo
 
                 # Divisor que se muestra debajo de cada año: el de la REGLA de lo que hay en la tabla
                 # (Siembra -> sitios sembrados del año; MIAR, Nutrición -> censo de los lotes; Cosecha -> kg; etc.)
@@ -1562,6 +1621,10 @@ with pest[2]:
                         return ""
                     rr = {"ARB_TOTALVIVOS" if str(x).upper() in ("—", "ARB_TOTALVIVOS") else str(x).upper() for x in sub["regla_divisor"].dropna().unique()}
                     if len(rr) != 1:
+                        if not ver_pond and arb_anio.get(int(sub["anio"].iloc[0])):
+                            return (f'<span class="dv" title="Esta celda mezcla reglas distintas (árboles, kg, sitios): '
+                                    f'para tener una sola cifra se divide todo por los árboles vivos del año">'
+                                    f'🌳 {pesos(arb_anio.get(int(sub["anio"].iloc[0])))} árb. vivos · varias reglas</span>')
                         return '<span class="dv" title="Esta celda mezcla varias reglas de divisor">varias reglas</span>'
                     rg = rr.pop()
                     if rg == "SITIOS_SIEMBRA":
@@ -1636,7 +1699,7 @@ with pest[2]:
                             sub = _celdas.get((fila, _x_de.get(col)))
                         dv = divisor_celda(sub) if sub is not None else ""
                         return f"<td>{unitario(val)}{dv}</td>"
-                    hay_directo = eje == "Año" and bool(div_cab)
+                    hay_directo = eje == "Año" and bool(div_cab) and ver_pond
                     for _, r in t.iterrows():
                         clase = ' class="tot"' if r[nombre_c] == "TOTAL" else ""
                         nombre_f = "TOTAL ponderado" if (r[nombre_c] == "TOTAL" and hay_directo) else str(r[nombre_c])
@@ -1683,7 +1746,7 @@ with pest[2]:
                     return b.assign(**{por_c: b[por_c].where(~b[por_c].isin(resto), f"Otras ({len(resto)})")})
 
                 bg_cu = agrupar_resto(base, por)
-                tabla_cu = armar_tabla_cu(bg_cu, por, ver)
+                tabla_cu = armar(bg_cu, por, ver)
                 cols_cu = [c for c in tabla_cu.columns if c not in (ver, "Gasto total", "% del gasto")]
                 st.markdown(html_tabla_cu(tabla_cu, ver, None, bg_cu, por), unsafe_allow_html=True)
                 if base[por].nunique() > 16:
@@ -1721,7 +1784,7 @@ with pest[2]:
                     serie = (pro_a.groupby("anio")["valor"].sum() / base.groupby("anio")["valor"].sum()).fillna(0)
                     serie = serie.reindex(sorted(base["anio"].dropna().unique())).fillna(0)
                     for b_a, a_a in zip(serie.index[:-1], serie.index[1:]):
-                        if abs(serie[a_a] - serie[b_a]) >= 0.25:
+                        if ver_pond and abs(serie[a_a] - serie[b_a]) >= 0.25:   # solo afecta al ponderado
                             st.warning(f"**Cambio de base en {int(a_a)}:** el gasto cargado a lotes pasó de "
                                        f"{serie[b_a]:.0%} a {serie[a_a]:.0%}. El ponderado de {int(a_a)} no es comparable "
                                        f"con el de {int(b_a)}: para comparar años use el costo por árbol vivo (más abajo).",
@@ -1737,7 +1800,7 @@ with pest[2]:
                     if mo_b.empty:
                         st.info("No hay mano de obra con estos filtros.")
                     else:
-                        st.markdown(html_tabla_cu(armar_tabla_cu(agrupar_resto(mo_b, por), por, ver), ver, mo_b),
+                        st.markdown(html_tabla_cu(armar(agrupar_resto(mo_b, por), por, ver), ver, mo_b),
                                     unsafe_allow_html=True)
                         st.caption("Nómina + mano de obra al contrato.")
                 with st.expander(f"📦 Insumos, servicios y otros costos · {millones(ot_b['valor'].sum())} "
@@ -1745,12 +1808,16 @@ with pest[2]:
                     if ot_b.empty:
                         st.info("No hay insumos ni servicios con estos filtros.")
                     else:
-                        st.markdown(html_tabla_cu(armar_tabla_cu(agrupar_resto(ot_b, "detalle"), "detalle", "Detalle"),
+                        st.markdown(html_tabla_cu(armar(agrupar_resto(ot_b, "detalle"), "detalle", "Detalle"),
                                                   "Detalle", ot_b),
                                     unsafe_allow_html=True)
                         st.caption("Por la columna DETALLE del Excel.")
-                st.caption("TOTAL ponderado: promedio según el gasto (Power BI), por eso no suma las filas. "
-                           "TOTAL directo: gasto total del año ÷ divisor del encabezado = lo que costó cada unidad.")
+                if ver_pond:
+                    st.caption("TOTAL ponderado: promedio según el gasto (Power BI), por eso no suma las filas. "
+                               "TOTAL directo: gasto total del año ÷ divisor del encabezado = lo que costó cada unidad.")
+                else:
+                    st.caption("Cada valor es el costo real: gasto ÷ unidades. Si las filas usan las mismas unidades, "
+                               "suman el TOTAL. Lo que no tiene lote o censo se reparte entre los árboles vivos.")
 
                 # Gráfica: los 5 de mayor gasto (se pueden cambiar)
                 opciones = [o for o in tabla_cu[ver] if o != "TOTAL" and not str(o).startswith("Otras (")]
@@ -1780,12 +1847,13 @@ with pest[2]:
                                  .format(lambda v: f"{v:.1%}".replace(".", ","), subset=["% del gasto"]),
                                  hide_index=True)
 
-                tabla_xls, filas_xls = armar_tabla_cu(base, por, ver), base.drop(columns=["_x", "huella"], errors="ignore")
+                filas_xls = base.drop(columns=["_x", "huella"], errors="ignore")
 
-                def excel_cu(t=tabla_xls, f=filas_xls):
+                def excel_cu(b=base, f=filas_xls):
                     salida = io.BytesIO()
                     with pd.ExcelWriter(salida, engine="openpyxl") as w:
-                        t.to_excel(w, index=False, sheet_name="CU ponderado")  # completa
+                        armar_tabla_directo(b, por, ver).to_excel(w, index=False, sheet_name="Costo unitario")
+                        armar_tabla_cu(b, por, ver).to_excel(w, index=False, sheet_name="Ponderado Power BI")
                         f.to_excel(w, index=False, sheet_name="Detalle filas")
                     return salida.getvalue()
                 # El Excel se arma solo al tocar el botón (antes se armaba en cada clic: unos 20 segundos)
