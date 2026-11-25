@@ -122,9 +122,9 @@ st.markdown(f"""
   .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button[kind$="Active"] p {{ color:#fff !important; font-weight:600; }}
 
   /* Empresa: fichas grandes con el punto de color de cada empresa; Grupo ocupa el alto completo */
-  .st-key-f_empresa [role="radiogroup"] {{ display:grid !important; grid-template-columns:auto auto;
-        grid-template-rows:auto auto; gap:6px 8px; overflow:visible !important; width:fit-content; }}
-  .st-key-f_empresa [role="radiogroup"] > button {{ border-radius:10px !important; width:100%; min-width:8.2rem;
+  .st-key-f_empresa [role="radiogroup"] {{ display:grid !important; grid-template-columns:1fr;
+        gap:6px; overflow:visible !important; width:100%; max-width:11rem; }}
+  .st-key-f_empresa [role="radiogroup"] > button {{ border-radius:10px !important; width:100%; min-width:0; min-height:2.35rem;
         border:1px solid #E3E8E2 !important; margin:0 !important; background:#F7F9F7 !important; justify-content:flex-start; }}
   .st-key-f_empresa [role="radiogroup"] > button p {{ font-weight:600; letter-spacing:0.3px; color:#344054 !important; }}
   .st-key-f_empresa [role="radiogroup"] > button::before {{ content:""; width:9px; height:9px; border-radius:50%;
@@ -133,11 +133,7 @@ st.markdown(f"""
         box-shadow:0 0 0 3px rgba(235,104,52,0.15); }}
   .st-key-f_empresa [role="radiogroup"] > button:nth-child(3)::before {{
         background:linear-gradient(135deg, #2a78d6 50%, #eb6834 50%); box-shadow:0 0 0 3px rgba(27,94,32,0.12); }}
-  .st-key-f_empresa [role="radiogroup"] > button:nth-child(1) {{ grid-column:1; grid-row:1; }}
-  .st-key-f_empresa [role="radiogroup"] > button:nth-child(2) {{ grid-column:1; grid-row:2; }}
-  .st-key-f_empresa [role="radiogroup"] > button:nth-child(3) {{ grid-column:2; grid-row:1 / span 2; height:auto;
-        min-width:6.5rem; justify-content:center; flex-direction:column; gap:4px; }}
-  .st-key-f_empresa [role="radiogroup"] > button:nth-child(3)::before {{ margin-right:0; }}
+
   .st-key-barra_filtros .st-key-f_empresa [role="radiogroup"] > button:is([data-selected="true"],[aria-checked="true"],[kind$="Active"]) {{ background:var(--acento) !important;
         border-color:var(--acento) !important; box-shadow:0 4px 12px -4px var(--acento); }}
   .st-key-barra_filtros .st-key-f_empresa [role="radiogroup"] > button:is([data-selected="true"],[aria-checked="true"],[kind$="Active"])::before {{ background:#fff !important;
@@ -149,9 +145,15 @@ st.markdown(f"""
   [class*="st-key-f_mes"] [role="toolbar"], [class*="st-key-f_mes"] [role="radiogroup"] {{
         background:#F1F4F0; border-radius:12px; padding:4px; gap:3px !important; overflow:visible !important; }}
   .st-key-f_anio [role="toolbar"], .st-key-f_anio [role="radiogroup"] {{ display:grid !important; width:fit-content;
-        grid-template-columns:repeat(6, minmax(3.7rem, max-content)); }}
-  [class*="st-key-f_mes"] [role="toolbar"], [class*="st-key-f_mes"] [role="radiogroup"] {{ display:flex !important;
-        flex-wrap:wrap; width:fit-content; }}
+        grid-template-columns:max-content repeat(5, minmax(3.6rem, max-content)); }}
+  [class*="st-key-f_mes"] [role="toolbar"], [class*="st-key-f_mes"] [role="radiogroup"] {{ display:grid !important;
+        grid-template-columns:max-content repeat(6, minmax(3.1rem, max-content)); width:fit-content; }}
+  /* "Todos" y "Año completo" ocupan el alto de las dos filas, a la izquierda de la cuadrícula */
+  .st-key-f_anio :is([role="toolbar"],[role="radiogroup"]) > button:first-child,
+  [class*="st-key-f_mes"] :is([role="toolbar"],[role="radiogroup"]) > button:first-child {{
+        grid-row:1 / span 2; height:auto !important; padding:0.1rem 0.9rem !important; }}
+  .st-key-f_anio button, [class*="st-key-f_mes"] button {{ min-height:1.95rem !important; padding:0.1rem 0.6rem !important; }}
+  .st-key-f_anio button p, [class*="st-key-f_mes"] button p {{ font-size:0.82rem !important; }}
   .st-key-f_anio button, [class*="st-key-f_mes"] button {{ margin:0 !important; justify-content:center;
         background:transparent !important; border-color:transparent !important; }}
   .st-key-f_anio button:hover, [class*="st-key-f_mes"] button:hover {{ background:#FFFFFF !important;
@@ -160,7 +162,7 @@ st.markdown(f"""
   .st-key-f_naturaleza [role="toolbar"] {{ display:grid !important; grid-template-columns:repeat(2, 1fr);
         gap:6px; overflow:visible !important; width:fit-content; }}
   .st-key-f_naturaleza [role="toolbar"] > button {{ width:100%; margin:0 !important; }}
-  .st-key-f_tipo [role="toolbar"] {{ display:grid !important; grid-template-columns:7.5rem; gap:6px;
+  .st-key-f_tipo [role="toolbar"] {{ display:grid !important; grid-template-columns:repeat(2, minmax(6.2rem, 1fr)); gap:6px;
         width:fit-content; overflow:visible !important; }}
   .st-key-f_tipo [role="toolbar"] > button {{ width:100%; margin:0 !important; }}
 
@@ -169,11 +171,11 @@ st.markdown(f"""
               border-top:1px dashed #E3E8E2; }}
   .resumen .lbl {{ font-size:0.66rem; font-weight:700; letter-spacing:1px; text-transform:uppercase;
                    color:#7A867C; margin-right:2px; }}
-  .resumen .ch {{ display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px;
-                  background:#F3F6F3; border:1px solid #E6EBE5; font-size:0.8rem; color:#344054; white-space:nowrap; }}
+  .resumen .ch {{ display:inline-flex; align-items:center; gap:6px; padding:2px 9px; border-radius:999px;
+                  background:#F3F6F3; border:1px solid #E6EBE5; font-size:0.76rem; color:#344054; white-space:nowrap; }}
   .resumen .ch .pt {{ width:8px; height:8px; border-radius:50%; background:var(--acento); }}
   .resumen .ch.per {{ background:#EAF3EA; border-color:#CFE3D0; color:{VERDE}; font-weight:600; }}
-  a.restablecer {{ display:inline-block; margin-top:0.55rem; font-size:0.8rem; font-weight:600; color:#5B6B5E !important;
+  a.restablecer {{ display:inline-block; margin-top:0.55rem; font-size:0.76rem; font-weight:600; color:#5B6B5E !important;
                    text-decoration:none; white-space:nowrap; padding:4px 11px; border-radius:999px; border:1px solid #E3E8E2; }}
   a.restablecer:hover {{ color:{VERDE} !important; border-color:#9CC79F; background:#F7FBF7; }}
 
@@ -333,20 +335,20 @@ encabezado = st.container()
 
 # ---- Filtros arriba, en dos bloques: PERIODO (cuándo) y ALCANCE (qué se mira) ----
 with st.container(key="barra_filtros"):
-    col_alcance, col_periodo = st.columns([0.85, 1.5], gap="medium")
+    col_alcance, col_periodo = st.columns([0.95, 1.45], gap="medium")
     bloque_periodo = col_periodo.container(key="bloque_periodo")
     bloque_alcance = col_alcance.container(key="bloque_alcance")
 
     # ALCANCE: empresa, tipo y naturaleza (va primero en el código: los años dependen de la empresa)
     with bloque_alcance:
-        a1, a2 = st.columns([1.6, 1], gap="small")
+        a1, a2 = st.columns([0.85, 1.6], gap="small")
         vista = boton_unico(a1, "Empresa", ["AGROCACAY", "KAHAI", GRUPO], "AGROCACAY", "f_empresa",
                             "Las empresas se ven por separado. 'Grupo' suma las dos.", segmentado=True)
         tipos = a2.pills("Tipo de gasto", ["Nómina", "Terceros"], selection_mode="multi",
                          default=["Nómina", "Terceros"], key="f_tipo",
                          help="Nómina = empleados de la empresa. Terceros = todo lo demás: proveedores, "
                               "contratistas, servicios, impuestos, bancos. Los dos encendidos = gasto total.")
-        naturalezas = st.pills(
+        naturalezas = a2.pills(
             "Naturaleza del gasto", ["Operativo", "Intercompañía", "Financiero", "Inversión"],
             selection_mode="multi", default=C.NATURALEZAS_POR_DEFECTO, key="f_naturaleza",
             help="Toque para activar o quitar. Financiero = CECO FINANCIERO (intereses, créditos). "
@@ -396,11 +398,17 @@ with st.container(key="barra_filtros"):
     nombre_emp = "Grupo (AGROCACAY + KAHAI)" if vista == GRUPO else vista
     tipos_txt = " + ".join(tipos) if tipos else "Sin tipo de gasto"
     nat_txt = " · ".join(naturalezas) if naturalezas else "Sin naturaleza"
-    r1, r2 = st.columns([8, 1.2], gap="small", vertical_alignment="bottom")
+    r1, r2 = st.columns([8, 1.1], gap="small", vertical_alignment="center")
+    if todos:
+        frase_c = frase.split(" · ")[0]
+    elif mes_txt == AÑO_COMPLETO:
+        frase_c = f"Año {anio}{hasta} · vs mismos meses {anio - 1}"
+    else:
+        frase_c = f"{mes_txt}-{anio} · vs {previo} y {mes_txt}-{anio - 1}"
     r1.markdown(f'<div class="resumen"><span class="lbl">Viendo</span>'
                 f'<span class="ch"><span class="pt"></span>{nombre_emp}</span>'
                 f'<span class="ch">{tipos_txt}</span><span class="ch">{nat_txt}</span>'
-                f'<span class="ch per">📅 {frase}</span></div>', unsafe_allow_html=True)
+                f'<span class="ch per" title="{frase}">📅 {frase_c}</span></div>', unsafe_allow_html=True)
     # Restablecer = volver a abrir la página (empieza limpia; la sesión de Google se mantiene)
     r2.markdown('<div style="text-align:right"><a class="restablecer" href="./" target="_self" '
                 'title="Vuelve todos los filtros a como abre la app">↺ Restablecer</a></div>', unsafe_allow_html=True)
