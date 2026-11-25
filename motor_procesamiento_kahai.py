@@ -60,6 +60,27 @@ COLS_LOTES = {"AÑO": "anio", "LOTE ACEITE": "lote", "NUEZ TESTA (kg)": "nuez_te
               "NUEZ PARA ACEITE (kg)": "nuez_aceite", "ACEITE (kg)": "aceite"}
 
 
+def leer_cultivo_lotes(ruta=None):
+    """Hoja CULTIVO_LOTES: árboles y kg cosechados de cada lote de cultivo de KAHAI por año (divisores de la
+    vista 'Cultivo por lote'). Celdas vacías = sin dato (la app muestra solo el gasto)."""
+    ruta = ruta or C.ARCHIVO_PRODUCCION_KAHAI
+    temporal = os.path.join(tempfile.gettempdir(), "lectura_cultivo_kahai.xlsx")
+    shutil.copy2(ruta, temporal)
+    try:
+        h = pd.read_excel(temporal, sheet_name="CULTIVO_LOTES", usecols="A:D")
+    except ValueError:
+        return pd.DataFrame(columns=["lote", "anio", "arboles", "kg"])
+    finally:
+        os.remove(temporal)
+    h.columns = ["lote", "anio", "arboles", "kg"]
+    h = h[h["lote"].notna() & pd.to_numeric(h["anio"], errors="coerce").notna()].copy()
+    h["lote"] = h["lote"].astype(str).str.strip().str.upper()
+    h["anio"] = pd.to_numeric(h["anio"]).astype(int)
+    for c in ["arboles", "kg"]:
+        h[c] = pd.to_numeric(h[c], errors="coerce")
+    return h.reset_index(drop=True)
+
+
 def leer_lotes(ruta=None):
     """Hoja LOTES_ACEITE: la nuez de cada lote y cómo se transforma hasta aceite (los % se calculan en la app)."""
     ruta = ruta or C.ARCHIVO_PRODUCCION_KAHAI
@@ -89,6 +110,9 @@ def correr():
     con = sqlite3.connect(C.BASE_LOCAL)
     div.to_sql("kahai_divisores", con, if_exists="replace", index=False)
     reg.to_sql("kahai_reglas_proc", con, if_exists="replace", index=False)
+    cult = leer_cultivo_lotes(ruta)
+    cult.to_sql("kahai_cultivo_lotes", con, if_exists="replace", index=False)
+    print(f"Cultivo por lote: {cult['arboles'].notna().sum()} años con árboles, {cult['kg'].notna().sum()} con kg")
     lotes = leer_lotes(ruta)
     lotes.to_sql("kahai_lotes_aceite", con, if_exists="replace", index=False)
     print(f"Lotes de aceite: {len(lotes)} ({', '.join(map(str, sorted(lotes['anio'].unique()))) or 'ninguno'})")

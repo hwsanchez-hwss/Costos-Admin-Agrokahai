@@ -1227,9 +1227,168 @@ def mostrar_lotes_aceite(a_ref, kg):
         st.caption("⚠️ Para revisar: " + " · ".join(avisos))
 
 
+LOTES_KAHAI = {"CUMARAL": "CUMARAL · HM", "RESTREPO": "RESTREPO · MPB", "PTO GAITAN": "PTO GAITAN",
+               "VILLA/CIO": "General (Villavicencio)"}
+
+
+def mostrar_cultivo_kahai():
+    """Cultivo de KAHAI por lote (columna PLANTA del consolidado): gasto por lote y por rubro, año contra año.
+    Si la hoja CULTIVO_LOTES de PRODUCCION_KAHAI.xlsx trae árboles y kg por lote, muestra también $/árbol y $/kg."""
+    import html as _h
+    import re as _re
+    st.subheader("🌱 Cultivo KAHAI por lote")
+    k = datos[(datos["empresa"] == "KAHAI") & datos["naturaleza"].isin(naturalezas) & datos["tipo"].isin(tipos)
+              & (datos["ceco"].str.upper() == "CULTIVO")].copy()
+    if k.empty:
+        st.info("No hay gasto de cultivo de KAHAI con estos filtros.")
+        return
+    k["anio"] = k["periodo"] // 100
+    k["lote"] = k["planta"].fillna("(sin lote)").astype(str).str.strip().str.upper()
+    # Rubro sin el sufijo del lote (MIAR_HM y MIAR_MPB -> MIAR) para comparar lotes con el mismo nombre
+    k["rubro_b"] = k["rubro"].astype(str).str.strip().map(lambda r: _re.sub(r"_(HM|MPB)$", "", r, flags=_re.I))
+    k["rubro_b"] = k["rubro_b"].map(lambda r: r[:1].upper() + r[1:])
+    k["es_mo"] = k["bloque"].isin(["Mano de obra (nómina)", "Mano de obra al contrato"])
+
+    div = F.leer_tabla("kahai_cultivo_lotes")
+    arb, kgl = {}, {}
+    if not div.empty:
+        div["lote"] = div["lote"].astype(str).str.strip().str.upper()
+        arb = {(l, int(a)): v for l, a, v in zip(div["lote"], div["anio"], pd.to_numeric(div["arboles"], errors="coerce"))
+               if pd.notna(v) and v > 0}
+        kgl = {(l, int(a)): v for l, a, v in zip(div["lote"], div["anio"], pd.to_numeric(div["kg"], errors="coerce"))
+               if pd.notna(v) and v > 0}
+
+    def por_kg(rubro):
+        return str(rubro).lower().startswith(("cosecha", "fruto verde"))
+
+    lotes = [l for l in LOTES_KAHAI if l in set(k["lote"])] + sorted(set(k["lote"]) - set(LOTES_KAHAI))
+    lote_sel = st.segmented_control("Lote", ["Todos los lotes"] + lotes, default="Todos los lotes", key="kc_lote",
+                                    format_func=lambda l: LOTES_KAHAI.get(l, l)) or "Todos los lotes"
+    todos_l = lote_sel == "Todos los lotes"
+    kl = k if todos_l else k[k["lote"] == lote_sel]
+    if kl.empty:
+        st.info("Este lote no tiene gasto con estos filtros.")
+        return
+    anios_k = sorted(kl["anio"].unique())[-8:]
+    a_ref = anio if anio in anios_k else anios_k[-1]
+    ult_m = int(kl.loc[kl["anio"] == a_ref, "periodo"].max() % 100)
+    parcial = ult_m < 12
+    hasta = f" (Ene–{NOMBRE_MES[ult_m]})" if parcial else ""
+
+    def etq(a):
+        m = int(kl.loc[kl["anio"] == a, "periodo"].max() % 100)
+        return f"{a} (Ene–{NOMBRE_MES[m]})" if a == anios_k[-1] and m < 12 else str(a)
+
+    # ---- Tarjetas
+    g_act = kl.loc[kl["anio"] == a_ref, "valor"].sum()
+    g_prev = kl.loc[(kl["anio"] == a_ref - 1) & (kl["periodo"] % 100 <= ult_m), "valor"].sum()
+    mo_act = kl.loc[(kl["anio"] == a_ref) & kl["es_mo"], "valor"].sum()
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(f"Gasto cultivo {a_ref}{hasta}", millones(g_act),
+              f"{porcentaje(variacion(g_act, g_prev))} vs {a_ref - 1}{hasta}" if g_prev else None, delta_color="inverse")
+    c2.metric("Peso de la mano de obra", f"{mo_act / g_act:.0%}" if g_act else "—",
+              help="Nómina + mano de obra al contrato, como % del gasto de cultivo")
+    if todos_l:
+        g_l = k[k["anio"] == a_ref].groupby("lote")["valor"].sum().sort_values(ascending=False)
+        c3.metric(f"Lote con más gasto {a_ref}", LOTES_KAHAI.get(g_l.index[0], g_l.index[0]) if len(g_l) else "—",
+                  f"{millones(g_l.iloc[0])}" if len(g_l) else None, delta_color="off")
+        c4.metric("Lotes con gasto", str(int((g_l > 0).sum())))
+    else:
+        a_l, kg_l = arb.get((lote_sel, a_ref)), kgl.get((lote_sel, a_ref))
+        c3.metric(f"Costo por árbol {a_ref}{hasta}", unitario(g_act / a_l) if a_l else "sin árboles",
+                  help="Gasto del lote ÷ árboles del lote (hoja CULTIVO_LOTES de PRODUCCION_KAHAI.xlsx)")
+        g_kg = kl.loc[(kl["anio"] == a_ref) & kl["rubro_b"].map(por_kg), "valor"].sum()
+        c4.metric(f"Cosecha $/kg {a_ref}", unitario(g_kg / kg_l) if kg_l else "sin kg",
+                  help="Gasto de cosecha del lote ÷ kg cosechados del lote (hoja CULTIVO_LOTES)")
+
+    # ---- Tabla HTML: gasto grande y, debajo, $/árbol o $/kg cuando hay divisor
+    def celda(sub, a, rubro=None, lote=None):
+        v = sub.loc[sub["anio"] == a, "valor"].sum()
+        if not v:
+            return "<td>—</td>"
+        det = ""
+        if lote is not None and lote in LOTES_KAHAI:
+            if rubro is not None and por_kg(rubro):
+                d = kgl.get((lote, a))
+                det = f"<div class='det'>${pesos(v / d)}/kg</div>" if d else ""
+            else:
+                d = arb.get((lote, a))
+                det = f"<div class='det'>${pesos(v / d)}/árbol</div>" if d else ""
+        return f"<td>{millones(v)}{det}</td>"
+
+    def tabla(filas_def, titulo_col):
+        cab = (f"<tr><th class='izq'>{titulo_col}</th>" + "".join(f"<th class='anio'>{etq(a)}</th>" for a in anios_k)
+               + "<th class='anio'>Var.</th></tr>")
+        filas = []
+        for nombre, sub, rubro, lote, clase in filas_def:
+            v_a = sub.loc[sub["anio"] == a_ref, "valor"].sum()
+            v_p = sub.loc[(sub["anio"] == a_ref - 1) & (sub["periodo"] % 100 <= ult_m), "valor"].sum()
+            var = variacion(v_a, v_p) if v_p and v_a else None   # sin gasto aún este año: "—", no -100%
+            color = "#B42318" if var and var > 0 else "#067647"
+            var_t = f"<td style='color:{color}'>{porcentaje(var)}</td>" if var is not None else "<td>—</td>"
+            filas.append(f"<tr{clase}><td class='izq'>{_h.escape(str(nombre))}</td>"
+                         + "".join(celda(sub, a, rubro, lote) for a in anios_k) + var_t + "</tr>")
+        return f"<div class='tpk'><table><thead>{cab}</thead><tbody>{''.join(filas)}</tbody></table></div>"
+
+    st.markdown("""<style>
+      .tpk { overflow-x:auto; border:1px solid #E5E7EB; border-radius:10px; }
+      .tpk table { border-collapse:collapse; width:100%; font-size:0.86rem; font-variant-numeric:tabular-nums; }
+      .tpk th { background:#F6F8F5; color:#374151; font-weight:600; padding:0.5rem 0.6rem; border-bottom:1px solid #E1E8DF;
+                white-space:nowrap; }
+      .tpk th.anio { text-align:center; } .tpk .izq { text-align:left; }
+      .tpk td { text-align:right; padding:0.4rem 0.6rem; border-bottom:1px solid #F0F2F0; white-space:nowrap;
+                font-weight:600; color:#111827; }
+      .tpk td.izq { font-weight:500; } .tpk .det { font-size:0.72rem; font-weight:400; color:#6B7280; }
+      .tpk tr.tot td { border-top:2px solid #CBD5CC; background:#FAFBFA; font-weight:800; }
+    </style>""", unsafe_allow_html=True)
+
+    lote_d = None if todos_l else lote_sel
+    if todos_l:
+        st.markdown("##### Gasto por lote")
+        defs = [(LOTES_KAHAI.get(l, l), k[k["lote"] == l], None, l, "") for l in lotes]
+        defs.append(("TOTAL", k, None, None, " class='tot'"))
+        st.markdown(tabla(defs, "Lote"), unsafe_allow_html=True)
+    st.markdown("##### Gasto por rubro" + ("" if todos_l else f" · {LOTES_KAHAI.get(lote_sel, lote_sel)}"))
+    orden_r = kl.groupby("rubro_b")["valor"].sum().sort_values(ascending=False).index
+    defs = [(r, kl[kl["rubro_b"] == r], r, lote_d, "") for r in orden_r]
+    defs.append(("Mano de obra (nómina + contrato)", kl[kl["es_mo"]], None, None, ""))
+    defs.append(("TOTAL", kl, None, lote_d, " class='tot'"))
+    st.markdown(tabla(defs, "Rubro"), unsafe_allow_html=True)
+    sin_div = not todos_l and lote_sel in LOTES_KAHAI and not any(l == lote_sel for l, _ in arb)
+    st.caption(f"Pesos en millones. Var. = {a_ref}{hasta} contra los mismos meses de {a_ref - 1} (rojo = subió el gasto). "
+               "El lote sale de la columna PLANTA del consolidado; los rubros _HM (Cumaral) y _MPB (Restrepo) se juntan "
+               "con su rubro base para poder comparar lotes."
+               + (" Para ver $/árbol y $/kg, llene la hoja CULTIVO_LOTES de Graficas\\PRODUCCION_KAHAI.xlsx "
+                  "(árboles y kg cosechados por lote y año) y corra:  python motor_procesamiento_kahai.py" if (sin_div or todos_l) and not arb else ""))
+
+    # ---- Gráfica: gasto por año, apilado por lote (o por rubro si se eligió un lote)
+    por_g = "lote" if todos_l else "rubro_b"
+    g = kl[kl["anio"].isin(anios_k)].groupby([por_g, "anio"])["valor"].sum().unstack(fill_value=0)
+    g = g.loc[g.sum(axis=1).sort_values(ascending=False).index]
+    if not todos_l and len(g) > 6:
+        g = pd.concat([g.iloc[:6], g.iloc[6:].sum().to_frame("Otros").T])
+    paleta = ["#1B5E20", "#eb6834", "#2a78d6", "#9CA3AF", "#eda100", "#e87ba4", "#6250d6"]
+    fig = go.Figure()
+    for i, (nombre, fila) in enumerate(g.iterrows()):
+        fig.add_bar(x=[etq(a) for a in g.columns], y=fila.values / 1e6, name=LOTES_KAHAI.get(nombre, nombre),
+                    marker_color=paleta[i % len(paleta)],
+                    hovertemplate=f"{LOTES_KAHAI.get(nombre, nombre)}<br>%{{x}}: %{{y:,.1f}} M<extra></extra>")
+    fig.update_layout(barmode="stack", height=340, separators=",.", bargap=0.3,
+                      title="Gasto de cultivo por año" + (" y lote" if todos_l else " y rubro") + " (millones)",
+                      legend=dict(orientation="h", y=1.16, x=0, traceorder="normal"), margin=dict(l=10, r=10, t=70, b=10),
+                      plot_bgcolor="rgba(0,0,0,0)", yaxis=dict(gridcolor="rgba(128,128,128,0.2)", ticksuffix=" M"),
+                      xaxis=dict(type="category"))
+    st.plotly_chart(fig, width="stretch")
+
+
 with pest[2]:
     if vista == "KAHAI":
-        mostrar_procesamiento_kahai()
+        vista_k = st.segmented_control("Ver", ["🌱 Cultivo por lote", "🏭 Procesamiento"], default="🌱 Cultivo por lote",
+                                       key="kahai_cu_vista", label_visibility="collapsed") or "🌱 Cultivo por lote"
+        if vista_k.startswith("🌱"):
+            mostrar_cultivo_kahai()
+        else:
+            mostrar_procesamiento_kahai()
     else:
         datos_cu, ultimo_cu = cargar_cu(VERSION_DATOS)
         if datos_cu.empty:

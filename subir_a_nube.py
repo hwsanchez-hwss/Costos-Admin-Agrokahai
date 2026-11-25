@@ -35,7 +35,7 @@ import config as C
 # Tablas que se suben (las mismas que lee el dashboard; ver fuente_datos.py)
 TABLAS_NUBE = ["agrocacay_vigente", "kahai_vigente", "agrocacay_costo_unitario",
                "historial_cargas", "calculos_cu", "kahai_divisores", "kahai_reglas_proc",
-               "kahai_lotes_aceite"]
+               "kahai_lotes_aceite", "kahai_cultivo_lotes"]
 
 ARCHIVO_SECRETS = os.path.join(C.CARPETA_APP, ".streamlit", "secrets.toml")
 FILAS_POR_ENVIO = 400      # filas por cada envío a Turso
