@@ -1577,9 +1577,20 @@ with pest[2]:
                     else:
                         v = arb_anio.get(int(sub["anio"].iloc[0]))
                     ic = DIV_REGLA.get(rg, ("🌳", ""))[0]
+                    o = sub["origen_divisor"].astype(str)
+                    hay_resp = o.str.startswith("Respaldo").any()      # parte del gasto se dividió por árboles vivos
+                    arb_r = arb_anio.get(int(sub["anio"].iloc[0]))
                     if not v or pd.isna(v) or v <= 0:
+                        if hay_resp and arb_r:
+                            return (f'<span class="dv" style="color:#9A5B00" title="La regla {rg} no tiene dato aquí '
+                                    f'(ej. lote sin censo): se dividió por los árboles vivos del año">'
+                                    f'🌳 {pesos(arb_r)} árb. vivos (respaldo)</span>')
+                        if o.str.contains("CU en blanco").all():
+                            return f'<span class="dv" title="Regla {rg}: sin dato, el costo queda en blanco">{ic} sin dato</span>'
                         return f'<span class="dv" title="Regla {rg}: sin divisor en este período">{ic} sin divisor</span>'
-                    return f'<span class="dv" title="Divisor de la regla {rg}">{ic} {pesos(v)} {UNI_DIV.get(rg, "")}</span>'
+                    extra = (' <span style="color:#9A5B00" title="Parte del gasto de esta celda no tiene dato de la regla '
+                             '(ej. lote sin censo) y se dividió por los árboles vivos del año">+ respaldo</span>') if hay_resp else ""
+                    return f'<span class="dv" title="Divisor de la regla {rg}">{ic} {pesos(v)} {UNI_DIV.get(rg, "")}{extra}</span>'
 
                 def html_tabla_cu(t, nombre_c, b=None, bg=None, por_c=None):
                     """Tabla ejecutiva en HTML: el año arriba y, en una segunda línea, el divisor de su regla."""
