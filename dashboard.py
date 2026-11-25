@@ -90,7 +90,7 @@ st.markdown(f"""
 
   /* ===== Panel de filtros: una sola tarjeta ejecutiva ===== */
   .st-key-barra_filtros {{ position:relative; overflow:hidden; margin-top:0.7rem; background:#FFFFFF;
-        border:1px solid #E3E8E2; border-radius:16px; padding:1.05rem 1.3rem 1rem 1.3rem;
+        border:1px solid #E3E8E2; border-radius:16px; padding:0.95rem 1.3rem 0.85rem 1.3rem;
         box-shadow:0 1px 2px rgba(16,24,40,0.04), 0 10px 28px -14px rgba(16,24,40,0.18); gap:0.55rem; }}
   .st-key-barra_filtros::before {{ content:""; position:absolute; left:0; right:0; top:0; height:4px;
         background:linear-gradient(90deg, {VERDE} 0%, #43A047 55%, var(--acento) 100%); }}
@@ -101,6 +101,10 @@ st.markdown(f"""
   @media (max-width: 900px) {{
     .st-key-bloque_periodo {{ border-left:none; padding-left:0; border-top:1px solid #EDF1EC; padding-top:0.7rem; }}
   }}
+  /* Sin recorte ni desvanecido al borde: todas las fichas se ven completas */
+  .st-key-barra_filtros [data-testid="stButtonGroup"], .st-key-barra_filtros [data-testid="stButtonGroup"] * {{
+        mask-image:none !important; -webkit-mask-image:none !important; }}
+  .st-key-barra_filtros [data-testid="stButtonGroup"] {{ overflow:visible !important; }}
   /* Títulos de cada filtro: pequeños, en mayúsculas, discretos */
   .st-key-barra_filtros [data-testid="stWidgetLabel"] {{ margin-bottom:0.15rem; min-height:0; }}
   .st-key-barra_filtros label p {{ font-size:0.66rem !important; font-weight:700 !important; letter-spacing:1px;
@@ -122,9 +126,10 @@ st.markdown(f"""
   .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button[kind$="Active"] p {{ color:#fff !important; font-weight:600; }}
 
   /* Empresa: fichas grandes con el punto de color de cada empresa; Grupo ocupa el alto completo */
-  .st-key-f_empresa [role="radiogroup"] {{ display:grid !important; grid-template-columns:1fr;
-        gap:6px; overflow:visible !important; width:100%; max-width:11rem; }}
-  .st-key-f_empresa [role="radiogroup"] > button {{ border-radius:10px !important; width:100%; min-width:0; min-height:2.35rem;
+  .st-key-f_empresa [role="radiogroup"] {{ display:grid !important; grid-template-columns:repeat(3, max-content);
+        gap:6px; overflow:visible !important; width:fit-content; }}
+  .st-key-f_empresa [role="radiogroup"] > button {{ border-radius:10px !important; width:100%; min-width:0; min-height:2.1rem;
+        padding:0.1rem 0.8rem !important;
         border:1px solid #E3E8E2 !important; margin:0 !important; background:#F7F9F7 !important; justify-content:flex-start; }}
   .st-key-f_empresa [role="radiogroup"] > button p {{ font-weight:600; letter-spacing:0.3px; color:#344054 !important; }}
   .st-key-f_empresa [role="radiogroup"] > button::before {{ content:""; width:9px; height:9px; border-radius:50%;
@@ -144,14 +149,14 @@ st.markdown(f"""
   .st-key-f_anio [role="toolbar"], .st-key-f_anio [role="radiogroup"],
   [class*="st-key-f_mes"] [role="toolbar"], [class*="st-key-f_mes"] [role="radiogroup"] {{
         background:#F1F4F0; border-radius:12px; padding:4px; gap:3px !important; overflow:visible !important; }}
-  .st-key-f_anio [role="toolbar"], .st-key-f_anio [role="radiogroup"] {{ display:grid !important; width:fit-content;
-        grid-template-columns:max-content repeat(5, minmax(3.6rem, max-content)); }}
-  [class*="st-key-f_mes"] [role="toolbar"], [class*="st-key-f_mes"] [role="radiogroup"] {{ display:grid !important;
-        grid-template-columns:max-content repeat(6, minmax(3.1rem, max-content)); width:fit-content; }}
-  /* "Todos" y "Año completo" ocupan el alto de las dos filas, a la izquierda de la cuadrícula */
+  .st-key-f_anio [role="toolbar"], .st-key-f_anio [role="radiogroup"] {{ display:flex !important; flex-wrap:wrap;
+        width:fit-content; }}
+  [class*="st-key-f_mes"] [role="toolbar"], [class*="st-key-f_mes"] [role="radiogroup"] {{ display:flex !important;
+        flex-wrap:wrap; width:fit-content; }}
+  /* "Todos" y "Año completo" separados del resto con una línea fina */
   .st-key-f_anio :is([role="toolbar"],[role="radiogroup"]) > button:first-child,
   [class*="st-key-f_mes"] :is([role="toolbar"],[role="radiogroup"]) > button:first-child {{
-        grid-row:1 / span 2; height:auto !important; padding:0.1rem 0.9rem !important; }}
+        margin-right:6px !important; }}
   .st-key-f_anio button, [class*="st-key-f_mes"] button {{ min-height:1.95rem !important; padding:0.1rem 0.6rem !important; }}
   .st-key-f_anio button p, [class*="st-key-f_mes"] button p {{ font-size:0.82rem !important; }}
   .st-key-f_anio button, [class*="st-key-f_mes"] button {{ margin:0 !important; justify-content:center;
@@ -159,10 +164,10 @@ st.markdown(f"""
   .st-key-f_anio button:hover, [class*="st-key-f_mes"] button:hover {{ background:#FFFFFF !important;
         border-color:#E3E8E2 !important; }}
   /* Naturaleza: 2 x 2 · Tipo de gasto: uno debajo del otro */
-  .st-key-f_naturaleza [role="toolbar"] {{ display:grid !important; grid-template-columns:repeat(2, 1fr);
+  .st-key-f_naturaleza [role="toolbar"] {{ display:grid !important; grid-template-columns:repeat(4, max-content);
         gap:6px; overflow:visible !important; width:fit-content; }}
   .st-key-f_naturaleza [role="toolbar"] > button {{ width:100%; margin:0 !important; }}
-  .st-key-f_tipo [role="toolbar"] {{ display:grid !important; grid-template-columns:repeat(2, minmax(6.2rem, 1fr)); gap:6px;
+  .st-key-f_tipo [role="toolbar"] {{ display:grid !important; grid-template-columns:repeat(2, max-content); gap:6px;
         width:fit-content; overflow:visible !important; }}
   .st-key-f_tipo [role="toolbar"] > button {{ width:100%; margin:0 !important; }}
 
@@ -175,7 +180,11 @@ st.markdown(f"""
                   background:#F3F6F3; border:1px solid #E6EBE5; font-size:0.76rem; color:#344054; white-space:nowrap; }}
   .resumen .ch .pt {{ width:8px; height:8px; border-radius:50%; background:var(--acento); }}
   .resumen .ch.per {{ background:#EAF3EA; border-color:#CFE3D0; color:{VERDE}; font-weight:600; }}
-  a.restablecer {{ display:inline-block; margin-top:0.55rem; font-size:0.76rem; font-weight:600; color:#5B6B5E !important;
+  .periodo {{ display:flex; justify-content:flex-end; align-items:center; gap:8px; flex-wrap:wrap; padding-bottom:6px; }}
+  .periodo .lbl {{ font-size:0.66rem; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:#7A867C; }}
+  .periodo .ch {{ padding:4px 12px; border-radius:999px; background:#EAF3EA; border:1px solid #CFE3D0; color:{VERDE};
+                  font-weight:600; font-size:0.8rem; white-space:nowrap; }}
+  a.restablecer {{ display:inline-block; margin-bottom:4px; font-size:0.76rem; font-weight:600; color:#5B6B5E !important;
                    text-decoration:none; white-space:nowrap; padding:4px 11px; border-radius:999px; border:1px solid #E3E8E2; }}
   a.restablecer:hover {{ color:{VERDE} !important; border-color:#9CC79F; background:#F7FBF7; }}
 
@@ -333,85 +342,70 @@ def boton_unico(lugar, etiqueta_f, opciones, defecto, clave, ayuda=None, formato
 # El encabezado se dibuja ARRIBA de los filtros, pero se llena después (necesita el periodo elegido)
 encabezado = st.container()
 
-# ---- Filtros arriba, en dos bloques: PERIODO (cuándo) y ALCANCE (qué se mira) ----
+# ---- Filtros arriba, en 3 filas horizontales: (1) empresa · tipo · naturaleza  (2) año  (3) mes ----
 with st.container(key="barra_filtros"):
-    col_alcance, col_periodo = st.columns([0.95, 1.45], gap="medium")
-    bloque_periodo = col_periodo.container(key="bloque_periodo")
-    bloque_alcance = col_alcance.container(key="bloque_alcance")
-
-    # ALCANCE: empresa, tipo y naturaleza (va primero en el código: los años dependen de la empresa)
-    with bloque_alcance:
-        a1, a2 = st.columns([0.85, 1.6], gap="small")
-        vista = boton_unico(a1, "Empresa", ["AGROCACAY", "KAHAI", GRUPO], "AGROCACAY", "f_empresa",
-                            "Las empresas se ven por separado. 'Grupo' suma las dos.", segmentado=True)
-        tipos = a2.pills("Tipo de gasto", ["Nómina", "Terceros"], selection_mode="multi",
-                         default=["Nómina", "Terceros"], key="f_tipo",
-                         help="Nómina = empleados de la empresa. Terceros = todo lo demás: proveedores, "
-                              "contratistas, servicios, impuestos, bancos. Los dos encendidos = gasto total.")
-        naturalezas = a2.pills(
-            "Naturaleza del gasto", ["Operativo", "Intercompañía", "Financiero", "Inversión"],
-            selection_mode="multi", default=C.NATURALEZAS_POR_DEFECTO, key="f_naturaleza",
-            help="Toque para activar o quitar. Financiero = CECO FINANCIERO (intereses, créditos). "
-                 "Inversión = CECO ACTIVOS. Intercompañía = compras a la empresa hermana.")
+    f1 = st.columns([1.45, 0.78, 1.8, 0.42], gap="small", vertical_alignment="bottom")
+    vista = boton_unico(f1[0], "Empresa", ["AGROCACAY", "KAHAI", GRUPO], "AGROCACAY", "f_empresa",
+                        "Las empresas se ven por separado. 'Grupo' suma las dos.", segmentado=True)
+    tipos = f1[1].pills("Tipo de gasto", ["Nómina", "Terceros"], selection_mode="multi",
+                        default=["Nómina", "Terceros"], key="f_tipo",
+                        help="Nómina = empleados de la empresa. Terceros = todo lo demás: proveedores, "
+                             "contratistas, servicios, impuestos, bancos. Los dos encendidos = gasto total.")
+    naturalezas = f1[2].pills(
+        "Naturaleza del gasto", ["Operativo", "Intercompañía", "Financiero", "Inversión"],
+        selection_mode="multi", default=C.NATURALEZAS_POR_DEFECTO, key="f_naturaleza",
+        help="Toque para activar o quitar. Financiero = CECO FINANCIERO (intereses, créditos). "
+             "Inversión = CECO ACTIVOS. Intercompañía = compras a la empresa hermana.")
+    # Restablecer = volver a abrir la página (empieza limpia; la sesión de Google se mantiene)
+    f1[3].markdown('<div style="text-align:right"><a class="restablecer" href="./" target="_self" '
+                   'title="Vuelve todos los filtros a como abre la app">↺ Restablecer</a></div>', unsafe_allow_html=True)
     empresas_vista = list(C.EMPRESAS) if vista == GRUPO else [vista]
     base_empresa = datos[datos["empresa"].isin(empresas_vista)]
     periodos = sorted(base_empresa["periodo"].unique())
 
-    # PERIODO: año y mes ("Todos" = todos los años, una columna por año)
-    with bloque_periodo:
-        anios = sorted({p // 100 for p in periodos})
-        TODOS_ANIOS = "Todos"
-        anio_sel = boton_unico(st, "Año", [TODOS_ANIOS] + anios, anios[-1], "f_anio")
-        todos = anio_sel == TODOS_ANIOS
-        anio = anios[-1] if todos else anio_sel
-        meses_del_anio = [p % 100 for p in periodos if p // 100 == anio]
-        AÑO_COMPLETO = "Año completo"
-        if todos:
-            # Con "Todos" también se puede elegir un mes: ese mes en cada año (Sep-2018 … Sep-2026)
-            meses_todos = sorted({p % 100 for p in periodos})
-            mes_txt = boton_unico(st, "Mes", [AÑO_COMPLETO] + [NOMBRE_MES[m] for m in meses_todos],
-                                  AÑO_COMPLETO, "f_mes_todos")
-            ultimo_m = NOMBRE_MES[meses_del_anio[-1]]
-            if mes_txt == AÑO_COMPLETO:
-                frase = (f"Todos los años ({anios[0]}–{anios[-1]}) · una columna por año. "
-                         f"{anios[-1]} va hasta {ultimo_m}" if meses_del_anio[-1] < 12 else
-                         f"Todos los años ({anios[0]}–{anios[-1]}) · una columna por año")
-            else:
-                frase = f"{mes_txt} de cada año · una columna por año, para ver cómo se comporta ese mes en el tiempo"
-        else:
-            opciones_mes = [AÑO_COMPLETO] + [NOMBRE_MES[m] for m in meses_del_anio]
-            # Año en curso: abre en el último mes. Años anteriores: abre en el año completo.
-            defecto_mes = NOMBRE_MES[meses_del_anio[-1]] if anio == anios[-1] else AÑO_COMPLETO
-            mes_txt = boton_unico(st, "Mes", opciones_mes, defecto_mes, f"f_mes_{anio}")
-            # Frase que explica contra qué se compara lo elegido (para leer las tarjetas sin dudas)
-            if mes_txt == AÑO_COMPLETO:
-                ultimo_m = NOMBRE_MES[meses_del_anio[-1]]
-                hasta = "" if meses_del_anio[-1] == 12 else f" (Ene–{ultimo_m})"
-                frase = f"Año {anio}{hasta} · se compara con los mismos meses de {anio - 1}"
-            else:
-                n_m = [k for k, v in NOMBRE_MES.items() if v == mes_txt][0]
-                previo = f"{NOMBRE_MES[n_m - 1]}-{anio}" if n_m > 1 else f"Dic-{anio - 1}"
-                frase = (f"{mes_txt}-{anio} · se compara con {previo} (mes anterior) y "
-                         f"{mes_txt}-{anio - 1} (año anterior)")
-
-    # Resumen de lo que se está viendo: así el gerente lee el contexto de un vistazo
-    nombre_emp = "Grupo (AGROCACAY + KAHAI)" if vista == GRUPO else vista
-    tipos_txt = " + ".join(tipos) if tipos else "Sin tipo de gasto"
-    nat_txt = " · ".join(naturalezas) if naturalezas else "Sin naturaleza"
-    r1, r2 = st.columns([8, 1.1], gap="small", vertical_alignment="center")
+    # Fila 2: año ("Todos" = todos los años, una columna por año) y, a la derecha, contra qué se compara
+    f2 = st.columns([2.6, 1.5], gap="small", vertical_alignment="bottom")
+    anios = sorted({p // 100 for p in periodos})
+    TODOS_ANIOS = "Todos"
+    anio_sel = boton_unico(f2[0], "Año", [TODOS_ANIOS] + anios, anios[-1], "f_anio")
+    todos = anio_sel == TODOS_ANIOS
+    anio = anios[-1] if todos else anio_sel
+    meses_del_anio = [p % 100 for p in periodos if p // 100 == anio]
+    AÑO_COMPLETO = "Año completo"
+    # Fila 3: mes
     if todos:
-        frase_c = frase.split(" · ")[0]
-    elif mes_txt == AÑO_COMPLETO:
-        frase_c = f"Año {anio}{hasta} · vs mismos meses {anio - 1}"
+        # Con "Todos" también se puede elegir un mes: ese mes en cada año (Sep-2018 … Sep-2026)
+        meses_todos = sorted({p % 100 for p in periodos})
+        mes_txt = boton_unico(st, "Mes", [AÑO_COMPLETO] + [NOMBRE_MES[m] for m in meses_todos],
+                              AÑO_COMPLETO, "f_mes_todos")
+        ultimo_m = NOMBRE_MES[meses_del_anio[-1]]
+        if mes_txt == AÑO_COMPLETO:
+            frase = (f"Todos los años ({anios[0]}–{anios[-1]}) · una columna por año. "
+                     f"{anios[-1]} va hasta {ultimo_m}" if meses_del_anio[-1] < 12 else
+                     f"Todos los años ({anios[0]}–{anios[-1]}) · una columna por año")
+            frase_c = f"Todos los años ({anios[0]}–{anios[-1]})"
+        else:
+            frase = f"{mes_txt} de cada año · una columna por año, para ver cómo se comporta ese mes en el tiempo"
+            frase_c = f"{mes_txt} de cada año"
     else:
-        frase_c = f"{mes_txt}-{anio} · vs {previo} y {mes_txt}-{anio - 1}"
-    r1.markdown(f'<div class="resumen"><span class="lbl">Viendo</span>'
-                f'<span class="ch"><span class="pt"></span>{nombre_emp}</span>'
-                f'<span class="ch">{tipos_txt}</span><span class="ch">{nat_txt}</span>'
-                f'<span class="ch per" title="{frase}">📅 {frase_c}</span></div>', unsafe_allow_html=True)
-    # Restablecer = volver a abrir la página (empieza limpia; la sesión de Google se mantiene)
-    r2.markdown('<div style="text-align:right"><a class="restablecer" href="./" target="_self" '
-                'title="Vuelve todos los filtros a como abre la app">↺ Restablecer</a></div>', unsafe_allow_html=True)
+        opciones_mes = [AÑO_COMPLETO] + [NOMBRE_MES[m] for m in meses_del_anio]
+        # Año en curso: abre en el último mes. Años anteriores: abre en el año completo.
+        defecto_mes = NOMBRE_MES[meses_del_anio[-1]] if anio == anios[-1] else AÑO_COMPLETO
+        mes_txt = boton_unico(st, "Mes", opciones_mes, defecto_mes, f"f_mes_{anio}")
+        # Frase que explica contra qué se compara lo elegido (para leer las tarjetas sin dudas)
+        if mes_txt == AÑO_COMPLETO:
+            ultimo_m = NOMBRE_MES[meses_del_anio[-1]]
+            hasta = "" if meses_del_anio[-1] == 12 else f" (Ene–{ultimo_m})"
+            frase = f"Año {anio}{hasta} · se compara con los mismos meses de {anio - 1}"
+            frase_c = f"Año {anio}{hasta} · vs mismos meses {anio - 1}"
+        else:
+            n_m = [k for k, v in NOMBRE_MES.items() if v == mes_txt][0]
+            previo = f"{NOMBRE_MES[n_m - 1]}-{anio}" if n_m > 1 else f"Dic-{anio - 1}"
+            frase = (f"{mes_txt}-{anio} · se compara con {previo} (mes anterior) y "
+                     f"{mes_txt}-{anio - 1} (año anterior)")
+            frase_c = f"{mes_txt}-{anio} · vs {previo} y {mes_txt}-{anio - 1}"
+    f2[1].markdown(f'<div class="periodo" title="{frase}"><span class="lbl">Comparando</span>'
+                   f'<span class="ch">📅 {frase_c}</span></div>', unsafe_allow_html=True)
 
 df = base_empresa[base_empresa["naturaleza"].isin(naturalezas) & base_empresa["tipo"].isin(tipos)]
 
