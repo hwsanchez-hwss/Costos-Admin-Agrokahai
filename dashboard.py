@@ -1577,11 +1577,13 @@ with pest[2]:
                     """Tabla ejecutiva en HTML: el año arriba y, en una segunda línea, el divisor de su regla."""
                     cols = [c for c in t.columns if c not in (nombre_c, "Gasto total", "% del gasto")]
                     b = base if b is None else b
+                    b_todo = b           # todo el gasto de la tabla (para el TOTAL directo)
                     regla, part_r = regla_principal(b)
                     if regla:            # el encabezado usa solo las filas de la regla principal
                         b = b[b["regla_divisor"].map(norm_regla) == regla]
                     icono = DIV_REGLA.get(regla, ("🌳", ""))[0]
                     txt_cab = {}      # divisor del encabezado por columna: si la celda tiene el mismo, no se repite
+                    div_cab = {}      # el número del divisor del encabezado, para el TOTAL directo
                     def th_anio(c):
                         if eje == "Año":
                             v, resp = divisor_anio(b, int(c), regla) if regla else (arb_anio.get(int(c)), False)
@@ -1594,6 +1596,7 @@ with pest[2]:
                             if v:
                                 uni = " kg" if regla == "PXN_KG" else ""
                                 txt_cab[c] = f"{icono} {pesos(v)}"
+                                div_cab[c] = v
                                 return f'<th class="anio">{c}<div class="sub">{icono} {pesos(v)}{uni}</div></th>'
                         return f'<th class="anio">{c}</th>'
                     cab = (f'<tr><th class="izq">{_html.escape(nombre_c)}</th><th>Gasto total</th><th>% del gasto</th>'
@@ -1617,12 +1620,24 @@ with pest[2]:
                         if txt_cab.get(col) and txt_cab[col] + " " in dv + " ":
                             dv = ""          # mismo divisor del encabezado: no se repite (la tabla queda más baja)
                         return f"<td>{unitario(val)}{dv}</td>"
+                    hay_directo = eje == "Año" and bool(div_cab)
                     for _, r in t.iterrows():
                         clase = ' class="tot"' if r[nombre_c] == "TOTAL" else ""
+                        nombre_f = "TOTAL ponderado" if (r[nombre_c] == "TOTAL" and hay_directo) else str(r[nombre_c])
                         pct_txt = f"{r['% del gasto']:.1%}".replace(".", ",")
-                        filas_h.append(f"<tr{clase}><td class='izq'>{_html.escape(str(r[nombre_c]))}</td>"
+                        filas_h.append(f"<tr{clase}><td class='izq'>{_html.escape(nombre_f)}</td>"
                                        f"<td>{millones(r['Gasto total'])}</td><td>{pct_txt}</td>"
                                        + "".join(celda_html(r[nombre_c], c, r[c]) for c in cols) + "</tr>")
+                    if hay_directo:
+                        # TOTAL directo: todo el gasto del año ÷ el divisor del encabezado (lo que costó cada unidad)
+                        uni_d = {"PXN_KG": "kg", "SITIOS_SIEMBRA": "sitio sembrado", "CENSO": "árbol del censo",
+                                 "SYRS_ARBOLES": "árbol sembrado"}.get(regla, "árbol vivo")
+                        g_anio = b_todo.groupby("anio")["valor"].sum()
+                        celdas_d = "".join(
+                            f"<td>{unitario(g_anio.get(int(c), 0) / div_cab[c])}</td>" if c in div_cab and g_anio.get(int(c))
+                            else "<td>—</td>" for c in cols)
+                        filas_h.append(f"<tr class='dir'><td class='izq'>TOTAL directo<div class='dvl'>gasto ÷ {uni_d}"
+                                       f"</div></td><td>{millones(b_todo['valor'].sum())}</td><td></td>{celdas_d}</tr>")
                     return f'<div class="tcu"><table><thead>{cab}</thead><tbody>{"".join(filas_h)}</tbody></table></div>'
 
                 st.markdown("""<style>
@@ -1639,6 +1654,8 @@ with pest[2]:
                   .tcu .izq { text-align:left; white-space:normal; min-width:120px; max-width:190px; line-height:1.2; }
                   .tcu tbody tr:hover td { background:#F9FBF9; }
                   .tcu tr.tot td { font-weight:700; border-top:2px solid #CBD5CC; background:#FAFBFA; }
+                  .tcu tr.dir td { font-weight:700; color:#1B5E20; background:#F1F7F1; border-top:1px dashed #B9D3BA; }
+                  .tcu tr.dir .dvl { font-size:0.64rem; font-weight:400; color:#5B6B5E; }
                 </style>""", unsafe_allow_html=True)
 
                 def agrupar_resto(b, por_c, n=15):
@@ -1716,7 +1733,8 @@ with pest[2]:
                                                   "Detalle", ot_b),
                                     unsafe_allow_html=True)
                         st.caption("Por la columna DETALLE del Excel.")
-                st.caption("Es un promedio ponderado: las partes no suman el TOTAL. El peso de cada una está en '% del gasto'.")
+                st.caption("TOTAL ponderado: promedio según el gasto (Power BI), por eso no suma las filas. "
+                           "TOTAL directo: gasto total del año ÷ divisor del encabezado = lo que costó cada unidad.")
 
                 # Gráfica: los 5 de mayor gasto (se pueden cambiar)
                 opciones = [o for o in tabla_cu[ver] if o != "TOTAL" and not str(o).startswith("Otras (")]
