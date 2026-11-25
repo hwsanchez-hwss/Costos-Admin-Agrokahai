@@ -1636,8 +1636,6 @@ with pest[2]:
                         else:
                             sub = _celdas.get((fila, _x_de.get(col)))
                         dv = divisor_celda(sub) if sub is not None else ""
-                        if txt_cab.get(col) and txt_cab[col] + " " in dv + " ":
-                            dv = ""          # mismo divisor del encabezado: no se repite (la tabla queda más baja)
                         return f"<td>{unitario(val)}{dv}</td>"
                     hay_directo = eje == "Año" and bool(div_cab)
                     for _, r in t.iterrows():
