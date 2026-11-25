@@ -846,8 +846,14 @@ def mostrar_procesamiento_kahai():
         sub = k[m]
         costo = sub.groupby("anio")["valor"].sum()
         mo = sub[sub["bloque"].isin(["Mano de obra (nómina)", "Mano de obra al contrato"])].groupby("anio")["valor"].sum()
-        lineas.append({"seccion": r["seccion"], "linea": r["linea"], "divisor": r["divisor"],
-                       "costo": costo, "mo": mo})
+        previa = next((l for l in lineas if (l["seccion"], l["linea"], l["divisor"]) ==
+                       (r["seccion"], r["linea"], r["divisor"])), None)
+        if previa:      # varias reglas con el mismo nombre de línea se suman (ej. Mantenimiento)
+            previa["costo"] = previa["costo"].add(costo, fill_value=0)
+            previa["mo"] = previa["mo"].add(mo, fill_value=0)
+        else:
+            lineas.append({"seccion": r["seccion"], "linea": r["linea"], "divisor": r["divisor"],
+                           "costo": costo, "mo": mo})
 
     def cpk(costo, divisor, a):
         kg_a = kg.get((divisor, a))
@@ -856,15 +862,29 @@ def mostrar_procesamiento_kahai():
 
     # ---- Tarjetas: el año elegido arriba (o el último con divisores)
     a_ref = anio if anio in anios_p else anios_p[-1]
+    def lineas_total(sec):
+        """Líneas que se suman en el total de la sección: en Aceite todas las etapas; en las demás, las que
+        comparten el divisor de la primera (ej. Poscosecha: todo lo que va ÷ kg de concha, no Nuez obtenida)."""
+        ls = [l for l in lineas if l["seccion"] == sec]
+        if not ls or sec.lower().startswith("aceite"):
+            return ls
+        return [l for l in ls if l["divisor"] == ls[0]["divisor"]]
+
+    def nombre_total(sec):
+        ls = lineas_total(sec)
+        if sec.lower().startswith("aceite"):
+            return "Costo kg aceite (suma)"
+        return {"CONCHA PROCESADA": "Costo kg concha (suma)"}.get(ls[0]["divisor"], f"Costo kg {ls[0]['divisor'].lower()} (suma)")
+
     def total_seccion(sec, a):
-        vals = [cpk(l["costo"], l["divisor"], a)[0] for l in lineas if l["seccion"] == sec]
+        vals = [cpk(l["costo"], l["divisor"], a)[0] for l in lineas_total(sec)]
         vals = [v for v in vals if v is not None]
         return sum(vals) if vals else None
     def primera(sec, a):
         l = next((l for l in lineas if l["seccion"] == sec), None)
         return cpk(l["costo"], l["divisor"], a)[0] if l else None
     t1, t2, t3, t4 = st.columns(4)
-    for col, nombre, f in [(t1, "Concha procesada", lambda a: primera("Poscosecha", a)),
+    for col, nombre, f in [(t1, "Poscosecha (kg concha)", lambda a: total_seccion("Poscosecha", a)),
                            (t2, "Nuez pelada", lambda a: primera("Nuez", a)),
                            (t3, "Aceite (suma de etapas)", lambda a: total_seccion("Aceite", a))]:
         v, v0 = f(a_ref), f(a_ref - 1)
@@ -892,11 +912,9 @@ def mostrar_procesamiento_kahai():
             celdas.append(f"<td>{pesos(v) if v is not None else '—'}<div class='det'>{det}</div></td>")
         filas.append(f"<tr><td class='izq'>{_h.escape(l['linea'])}</td><td class='izq div'>{_h.escape(l['divisor'])}</td>"
                      + "".join(celdas) + "</tr>")
-        siguiente = lineas[lineas.index(l) + 1]["seccion"] if lineas.index(l) + 1 < len(lineas) else None
-        n_sec = sum(1 for x in lineas if x["seccion"] == sec_actual)
-        if siguiente != sec_actual and n_sec > 1 and sec_actual.lower().startswith("aceite"):
+        if l is lineas_total(sec_actual)[-1] and len(lineas_total(sec_actual)) > 1:   # total tras su última línea
             tot = [total_seccion(sec_actual, a) for a in anios_p]
-            filas.append(f"<tr class='tot'><td class='izq' colspan='2'>Costo kg aceite (suma)</td>"
+            filas.append(f"<tr class='tot'><td class='izq' colspan='2'>{nombre_total(sec_actual)}</td>"
                          + "".join(f"<td>{pesos(v) if v else '—'}</td>" for v in tot) + "</tr>")
     st.markdown("""<style>
       .tpk { overflow-x:auto; border:1px solid #E5E7EB; border-radius:10px; }
@@ -920,8 +938,8 @@ def mostrar_procesamiento_kahai():
     # ---- Gráfica del costo por kg por año (una sección a la vez)
     secciones = list(dict.fromkeys(l["seccion"] for l in lineas))
     sec_g = st.segmented_control("Graficar", secciones, default=secciones[-1], key="kpk_sec") or secciones[-1]
-    lin_g = [l for l in lineas if l["seccion"] == sec_g]
-    apilar = sec_g.lower().startswith("aceite") and len(lin_g) > 1     # las etapas del aceite se suman
+    apilar = len(lineas_total(sec_g)) > 1          # las líneas que se suman van apiladas, con el total encima
+    lin_g = lineas_total(sec_g) if apilar else [l for l in lineas if l["seccion"] == sec_g]
     paleta = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#6250d6", "#008300", "#e34948"]
     fig = go.Figure()
     for i, l in enumerate(lin_g):
@@ -934,7 +952,7 @@ def mostrar_procesamiento_kahai():
                         text=[f"${pesos(v)}" if v else "" for v in tot], textposition="top center",
                         textfont=dict(size=12, color="#111827"))
     fig.update_layout(barmode="stack" if apilar else "group", height=360, separators=",.", bargap=0.3,
-                      title=f"{sec_g} · pesos por kg" + (" (suma de etapas)" if apilar else ""),
+                      title=f"{sec_g} · pesos por kg" + (f" ({nombre_total(sec_g).replace('Costo ', '')})" if apilar else ""),
                       legend=dict(orientation="h", y=1.15, x=0, traceorder="normal"), margin=dict(l=10, r=10, t=70, b=10),
                       plot_bgcolor="rgba(0,0,0,0)", yaxis=dict(gridcolor="rgba(128,128,128,0.2)", tickprefix="$"),
                       xaxis=dict(type="category"))
