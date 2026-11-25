@@ -1416,10 +1416,10 @@ with pest[2]:
             arb_anio = datos_cu.groupby("anio")["arb_total_vivos"].max()
 
             # ---- Tabla ponderada (igual a la de la app de campo / Power BI)
-            st.subheader("Costo unitario ponderado")
-            st.caption("Cada mes: costo ÷ divisor de su regla (árboles del censo, kg cosechados, sitios sembrados "
-                       "o árboles vivos). Varios meses o lotes se promedian ponderando por lo que se gastó en cada uno "
-                       "— la misma medida 'Costo Unitario Ponderado' de Power BI.")
+            st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.1rem'>"
+                        "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Costo unitario ponderado</span>"
+                        "<span style='font-size:0.8rem;color:#6B7280'>costo ÷ divisor de su regla, promediado según el "
+                        "gasto (medida de Power BI)</span></div>", unsafe_allow_html=True)
             # Recorrido como en una junta: la empresa ya está en el encabezado; aquí se baja
             # CECO → Rubro → Actividad → Ubicación. La tabla muestra siempre el SIGUIENTE nivel
             # al último elegido (sin CECO elegido: una fila por CECO; con CECO: una por rubro; etc.).
@@ -1445,8 +1445,8 @@ with pest[2]:
             else:
                 ver, por = "Detalle", "descripcion"
             ruta = " › ".join([titulo_vista] + elegidos_n)
-            st.markdown(f'<div class="frase">📍 <b>{ruta}</b> &nbsp;·&nbsp; filas por <b>{ver}</b></div>',
-                        unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:0.82rem;color:#374151;margin:-0.35rem 0 0.1rem">📍 <b>{ruta}</b>'
+                        f' &nbsp;·&nbsp; filas por <b>{ver}</b></div>', unsafe_allow_html=True)
 
             if eje == "Mes":
                 per_cu = sorted(base["periodo"].unique())
@@ -1581,6 +1581,7 @@ with pest[2]:
                     if regla:            # el encabezado usa solo las filas de la regla principal
                         b = b[b["regla_divisor"].map(norm_regla) == regla]
                     icono = DIV_REGLA.get(regla, ("🌳", ""))[0]
+                    txt_cab = {}      # divisor del encabezado por columna: si la celda tiene el mismo, no se repite
                     def th_anio(c):
                         if eje == "Año":
                             v, resp = divisor_anio(b, int(c), regla) if regla else (arb_anio.get(int(c)), False)
@@ -1592,6 +1593,7 @@ with pest[2]:
                                         f'este año: se dividió por árboles vivos">🌳 {pesos(v)} *</div></th>')
                             if v:
                                 uni = " kg" if regla == "PXN_KG" else ""
+                                txt_cab[c] = f"{icono} {pesos(v)}"
                                 return f'<th class="anio">{c}<div class="sub">{icono} {pesos(v)}{uni}</div></th>'
                         return f'<th class="anio">{c}</th>'
                     cab = (f'<tr><th class="izq">{_html.escape(nombre_c)}</th><th>Gasto total</th><th>% del gasto</th>'
@@ -1611,7 +1613,10 @@ with pest[2]:
                             sub = bg[bg["_x"] == _x_de.get(col)] if bg is not None and col in _x_de else None
                         else:
                             sub = _celdas.get((fila, _x_de.get(col)))
-                        return f"<td>{unitario(val)}{divisor_celda(sub) if sub is not None else ''}</td>"
+                        dv = divisor_celda(sub) if sub is not None else ""
+                        if txt_cab.get(col) and txt_cab[col] + " " in dv + " ":
+                            dv = ""          # mismo divisor del encabezado: no se repite (la tabla queda más baja)
+                        return f"<td>{unitario(val)}{dv}</td>"
                     for _, r in t.iterrows():
                         clase = ' class="tot"' if r[nombre_c] == "TOTAL" else ""
                         pct_txt = f"{r['% del gasto']:.1%}".replace(".", ",")
@@ -1622,16 +1627,16 @@ with pest[2]:
 
                 st.markdown("""<style>
                   .tcu { overflow-x:auto; border:1px solid #E5E7EB; border-radius:10px; margin:0.3rem 0 0.4rem 0; }
-                  .tcu table { border-collapse:collapse; width:100%; font-size:0.84rem; font-variant-numeric:tabular-nums; }
-                  .tcu th { background:#F6F8F5; color:#374151; font-weight:600; text-align:right; padding:0.45rem 0.6rem;
+                  .tcu table { border-collapse:collapse; width:100%; font-size:0.81rem; font-variant-numeric:tabular-nums; }
+                  .tcu th { background:#F6F8F5; color:#374151; font-weight:600; text-align:right; padding:0.32rem 0.45rem;
                             border-bottom:1px solid #E1E8DF; white-space:nowrap; vertical-align:bottom; }
                   .tcu th.anio { text-align:center; }
-                  .tcu th .sub { display:table; margin:4px auto 0 auto; padding:1px 7px; border-radius:999px;
+                  .tcu th .sub { display:table; margin:2px auto 0 auto; padding:0 6px; border-radius:999px;
                                  background:#E8F1E8; color:#1B5E20; font-weight:700; font-size:0.72rem; }
                   .tcu th .sub.resp { background:#FFF4E0; color:#9A5B00; }
-                  .tcu td { text-align:right; padding:0.38rem 0.5rem; border-bottom:1px solid #F0F2F0; white-space:nowrap; }
+                  .tcu td { text-align:right; padding:0.22rem 0.45rem; border-bottom:1px solid #F0F2F0; white-space:nowrap; }
                   .tcu td .dv { display:block; font-size:0.64rem; font-weight:400; color:#8A949B; line-height:1.1; margin-top:1px; }
-                  .tcu .izq { text-align:left; white-space:normal; min-width:140px; max-width:220px; }
+                  .tcu .izq { text-align:left; white-space:normal; min-width:120px; max-width:190px; line-height:1.2; }
                   .tcu tbody tr:hover td { background:#F9FBF9; }
                   .tcu tr.tot td { font-weight:700; border-top:2px solid #CBD5CC; background:#FAFBFA; }
                 </style>""", unsafe_allow_html=True)
@@ -1658,33 +1663,27 @@ with pest[2]:
                         resp_a = [int(a) for a in sorted(base["anio"].dropna().unique())
                                   if divisor_anio(base[base["regla_divisor"].map(norm_regla) == regla_t], int(a), regla_t)[1]] \
                             if regla_t != "ARB_TOTALVIVOS" else []
+                        anios_r = ", ".join(map(str, resp_a))
                         if resp_a and regla_t == "PXN_KG":
-                            txt_resp = (f" ⚠️ **{', '.join(map(str, resp_a))}**: no hay kg cosechados en la hoja PXN para ese "
-                                        "año, por eso el costo queda en blanco.")
+                            txt_resp = f" ⚠️ {anios_r}: sin kg en PXN, queda en blanco."
                         elif resp_a and regla_t == "SITIOS_SIEMBRA":
-                            txt_resp = (f" ⚠️ **{', '.join(map(str, resp_a))}**: la hoja ARB_TOTAL aún no tiene sitios "
-                                        "sembrados para ese año, por eso el costo queda en blanco. Al registrarlos y "
-                                        "correr motor_costo_unitario.py, aparece solo.")
+                            txt_resp = f" ⚠️ {anios_r}: sin sitios sembrados en ARB_TOTAL, queda en blanco."
                         elif resp_a:
-                            txt_resp = (f" ⚠️ **{', '.join(map(str, resp_a))}** (en naranja, con *): la hoja ARB_TOTAL aún no "
-                                        "tiene ese dato para el año, por eso el cálculo usó árboles vivos como respaldo. "
-                                        "Al completarlo, el costo se corrige solo.")
+                            txt_resp = f" ⚠️ {anios_r} (naranja *): sin dato propio, se usó árboles vivos."
                         else:
                             txt_resp = ""
                         otras = ""
                         if part_t < 0.999:
                             otros_r = (base[base["regla_divisor"].map(norm_regla) != regla_t]
                                        .groupby(por)["valor"].sum().sort_values(ascending=False).index[:4])
-                            otras = (f" Es la regla del {part_t:.0%} del gasto; {', '.join(map(str, otros_r))} usa(n) su "
-                                     "propia regla, que se ve en gris debajo de cada valor.")
-                        st.caption(f"Debajo de cada año: el divisor de la regla **{regla_t}** — "
-                                   f"{DIV_REGLA.get(regla_t, ('', 'árboles vivos'))[1]}.{otras}{txt_resp}")
+                            otras = f" · {', '.join(map(str, otros_r))}: su propio divisor, en gris."
+                        CORTO = {"PXN_KG": "kg cosechados", "CENSO": "árboles del censo", "SITIOS_SIEMBRA": "sitios sembrados",
+                                 "SYRS_ARBOLES": "árboles sembrados/resembrados", "ARB_TOTALVIVOS": "árboles vivos"}
+                        st.caption(f"Encabezado: {CORTO.get(regla_t, regla_t)} ({regla_t}).{otras}{txt_resp}")
                     else:
                         reglas_t = ", ".join(sorted(str(x) for x in base["regla_divisor"].dropna().unique()))
-                        st.markdown(f"<div style='font-size:0.7rem;line-height:1.35;color:#8A949B;margin:2px 0 4px'>"
-                                    f"Debajo de cada año: árboles vivos de la finca (ARB_TOTAL), solo como referencia. "
-                                    f"La tabla mezcla varias reglas ({__import__('html').escape(reglas_t)}); cada fila usa el divisor de la suya, que se ve en gris debajo de cada valor. "
-                                    "Elija un rubro para ver su divisor exacto.</div>", unsafe_allow_html=True)
+                        st.caption("Encabezado: árboles vivos, como referencia. Cada fila usa su propia regla; "
+                                   "cuando es distinta se ve en gris debajo del valor.")
                     # Aviso automático cuando la base cambia mucho de un año a otro
                     serie = (pro_a.groupby("anio")["valor"].sum() / base.groupby("anio")["valor"].sum()).fillna(0)
                     serie = serie.reindex(sorted(base["anio"].dropna().unique())).fillna(0)
@@ -1707,7 +1706,7 @@ with pest[2]:
                     else:
                         st.markdown(html_tabla_cu(armar_tabla_cu(agrupar_resto(mo_b, por), por, ver), ver, mo_b),
                                     unsafe_allow_html=True)
-                        st.caption("Nómina (jornales de la app de campo) + mano de obra al contrato.")
+                        st.caption("Nómina + mano de obra al contrato.")
                 with st.expander(f"📦 Insumos, servicios y otros costos · {millones(ot_b['valor'].sum())} "
                                  f"({pct(ot_b)} del gasto)"):
                     if ot_b.empty:
@@ -1716,11 +1715,8 @@ with pest[2]:
                         st.markdown(html_tabla_cu(armar_tabla_cu(agrupar_resto(ot_b, "detalle"), "detalle", "Detalle"),
                                                   "Detalle", ot_b),
                                     unsafe_allow_html=True)
-                        st.caption("Abierto por la columna DETALLE del Excel (insumos agrícolas, herramientas y equipos, "
-                                   "servicios, combustible…).")
-                st.caption("El costo unitario ponderado es un promedio pesado por el gasto: por eso las partes "
-                           "(ej. mano de obra e insumos) no suman el TOTAL. Para ver cuánto pesa cada parte use "
-                           "'% del gasto'.")
+                        st.caption("Por la columna DETALLE del Excel.")
+                st.caption("Es un promedio ponderado: las partes no suman el TOTAL. El peso de cada una está en '% del gasto'.")
 
                 # Gráfica: los 5 de mayor gasto (se pueden cambiar)
                 opciones = [o for o in tabla_cu[ver] if o != "TOTAL" and not str(o).startswith("Otras (")]
