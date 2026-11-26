@@ -738,19 +738,38 @@ with pest[0]:
 NIVELES = {"Mano de obra / Otros": "bloque", "Prefijo actividad (AC/KC/KV)": "prefijo", "CECO": "ceco", "Rubro": "rubro", "Detalle": "detalle", "Ubicación": "ubicacion",
            "Actividad / Notas": "actividad", "Tercero": "tercero", "Descripción": "descripcion"}
 
+# ---- Encabezado común de Tabla mensual y Costo unitario: mismo título, mismos selectores, mismo alto
+st.markdown("""<style>
+  [class*="st-key-cab_"] { gap:0.4rem !important; margin-bottom:-0.25rem; }
+  [class*="st-key-cab_"] [data-testid="stHorizontalBlock"] { row-gap:0.3rem; }
+  [class*="st-key-cab_"] [data-testid="stWidgetLabel"] { margin-bottom:0.05rem; min-height:1.15rem; }
+  [class*="st-key-cab_"] [data-baseweb="select"] > div { min-height:2.3rem; }
+  .ruta-cab { font-size:0.82rem; color:#374151; }
+</style>""", unsafe_allow_html=True)
+
+
+def titulo_pagina(titulo, sub, lugar=None):
+    (lugar or st).markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.1rem 0 0'>"
+                           f"<span style='font-size:1.35rem;font-weight:700;color:#111827'>{titulo}</span>"
+                           f"<span style='font-size:0.8rem;color:#6B7280'>{sub}</span></div>", unsafe_allow_html=True)
+
+
+def control_columnas(lugar, key, solo_anio=False):
+    """Año | Mes, igual en Tabla mensual y Costo unitario."""
+    ayuda = ("Año: una columna por año completo. Mes: una columna por mes." if not solo_anio else
+             "En KAHAI el costo unitario es anual: los kg y los árboles se cuentan por año.")
+    return lugar.segmented_control("Columnas", ["Año"] if solo_anio else ["Año", "Mes"], default="Año", key=key,
+                                   help=ayuda) or "Año"
+
+
+COLS_CAB = [0.85, 1, 1, 1, 1, 1.6]       # Columnas | CECO | Rubro | Detalle | Descripción | rango
+
+
 with pest[1]:
     # Tabla mensual con el mismo formato del costo unitario: se baja CECO › Rubro › Actividad › Ubicación
-    with st.container(key="tm_cab"):
-        st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.1rem'>"
-                    "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Tabla mensual</span>"
-                    "<span style='font-size:0.8rem;color:#6B7280'>el color marca los periodos de mayor gasto de cada fila · "
-                    "pase el mouse por una cifra para ver el valor exacto en pesos</span></div>", unsafe_allow_html=True)
-        st.markdown("""<style>
-          .st-key-tm_cab { gap:0.45rem !important; margin-bottom:0.35rem; }
-          .st-key-tm_cab [data-testid="stHorizontalBlock"] { row-gap:0.3rem; }
-          .st-key-tm_cab [data-testid="stWidgetLabel"] { margin-bottom:0.1rem; min-height:1.2rem; }
-          .st-key-ger_cab { gap:0.45rem !important; margin-bottom:0.35rem; }
-        </style>""", unsafe_allow_html=True)
+    with st.container(key="cab_tm"):
+        titulo_pagina("Tabla mensual", "gasto en pesos · el color marca los periodos de mayor gasto de cada fila · "
+                                       "pase el mouse por una cifra para ver el valor exacto")
         tm = df.copy()
         tm["ubic"] = tm["ubicacion"].fillna("").astype(str).str.strip()
         if "planta" in tm.columns:        # KAHAI no llena Ubicación: el lote está en PLANTA
@@ -764,9 +783,8 @@ with pest[1]:
         tm["ubic"] = tm["ubic"].replace("", "(sin dato)")
         NIV_TM = ([("Empresa", "empresa")] if vista == GRUPO else []) + \
             [("CECO", "ceco"), ("Rubro", "rubro"), ("Detalle", "detalle"), ("Descripción", "descripcion")]
-        cols_t = st.columns([0.75] + [1] * len(NIV_TM) + [1.6])
-        col_t = cols_t[0].radio("Columnas", ["Año", "Mes"], horizontal=True, key="tm_columnas",
-                                help="Año: una columna por año completo (suma de sus meses). Mes: una columna por mes.")
+        cols_t = st.columns(COLS_CAB[:1] + [1] * len(NIV_TM) + COLS_CAB[-1:], vertical_alignment="top")
+        col_t = control_columnas(cols_t[0], "tm_col")
         cols_t = cols_t[1:]
         base_t, elegidos_t = tm, []
         for i, (nom, campo) in enumerate(NIV_TM):
@@ -801,7 +819,7 @@ with pest[1]:
                                      label_visibility="collapsed") or "Siguiente nivel"
         ver_t, por_t = ABRIR[abrir]
         ruta_t = " › ".join([titulo_vista] + elegidos_t)
-        r1.markdown(f'<div style="font-size:0.82rem;color:#374151">📍 <b>{ruta_t}</b> &nbsp;·&nbsp; filas por '
+        r1.markdown(f'<div class="ruta-cab">📍 <b>{ruta_t}</b> &nbsp;·&nbsp; filas por '
                     f'<b>{ver_t}</b></div>', unsafe_allow_html=True)
 
     meses_rango = [p for p in periodos if desde <= p <= hasta]
@@ -990,12 +1008,12 @@ def componente_gerencial(d):
     return comp
 
 
-def mostrar_procesamiento_kahai():
+def mostrar_procesamiento_kahai(lugar_tit=None):
     """Costo por kg de la planta de KAHAI: costo del año ÷ kg del divisor (Graficas\\PRODUCCION_KAHAI.xlsx)."""
     import html as _h
     div = F.leer_tabla("kahai_divisores")
     reg = F.leer_tabla("kahai_reglas_proc", "ORDER BY orden")
-    st.subheader("🏭 Procesamiento KAHAI · costo por kg")
+    titulo_pagina("Procesamiento", "costo por kg de la planta KAHAI (concha, nuez y aceite)", lugar_tit)
     if div.empty or reg.empty:
         st.info("Faltan los divisores de procesamiento. Llene Graficas\\PRODUCCION_KAHAI.xlsx y corra:  "
                 "python motor_procesamiento_kahai.py")
@@ -1537,7 +1555,7 @@ PRODUCTOS_KAHAI = {"hidratante", "proteina", "proteína", "blister", "jabon", "j
 GENERALES_KAHAI = "kg de aceite producido (fila FILTRADO de la hoja DIVISORES)"
 
 
-def mostrar_cu_kahai():
+def mostrar_cu_kahai(lugar_tit=None):
     """Costo unitario de KAHAI con el mismo formato de AGROCACAY: costo real (gasto ÷ unidades) y, debajo de cada
     valor, con qué se dividió. Reglas (acordadas con Wal):
       CULTIVO        -> lote = PLANTA. Cosecha / fruto verde ÷ kg del lote; lo demás ÷ árboles del lote
@@ -1708,30 +1726,35 @@ def mostrar_cu_kahai():
         return c_, f"<span class='dv'>{ic} {txt}{' · falta dato' if faltan else ''}</span>"
 
     # ---- Recorrido CECO › Rubro › Actividad › Lote (como en AGROCACAY)
-    st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.1rem'>"
-                "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Costo unitario</span>"
-                "<span style='font-size:0.8rem;color:#6B7280'>gasto ÷ unidades (kg, árboles, plantas) · debajo de cada "
-                "valor, con qué se dividió</span></div>", unsafe_allow_html=True)
+    titulo_pagina("Costo unitario", "gasto ÷ unidades (kg, árboles, plantas) · debajo de cada valor, con qué se dividió",
+                  lugar_tit)
+    cab_k = st.container(key="cab_kcu")
     # En KAHAI la columna Actividad cambia de nombre entre años y trae facturas: se baja por Detalle y Descripción
     NIV = [("CECO", "ceco"), ("Rubro", "rubro"), ("Detalle", "detalle"), ("Descripción", "descripcion")]
-    cols_n = st.columns([1, 1, 1.3, 1])
+    cols_n = cab_k.columns(COLS_CAB, vertical_alignment="top")
+    control_columnas(cols_n[0], "kcu_col", solo_anio=True)
     base, elegidos = k, []
     for i, (nom, campo) in enumerate(NIV):
         libre = len(elegidos) < i
         ops = sorted(base[campo].replace("", np.nan).dropna().unique().tolist()) if not libre else []
-        val = cols_n[i].selectbox(nom, ["Todos"] + ops, key=f"kcu_{'_'.join(elegidos)}_{campo}", disabled=libre)
+        val = cols_n[i + 1].selectbox(nom, ["Todos"] + ops, key=f"kcu_{'_'.join(elegidos)}_{campo}", disabled=libre)
         if val != "Todos" and not libre:
             base = base[base[campo] == val]
             elegidos.append(val)
     ver, por = (NIV[len(elegidos)] if len(elegidos) < len(NIV) else ("Lote", "lote"))
-    r1, r2 = st.columns([4, 1.2], vertical_alignment="center")
-    r1.markdown(f'<div style="font-size:0.82rem;color:#374151;margin:-0.35rem 0 0.1rem">📍 <b>{" › ".join(["KAHAI"] + elegidos)}'
+    r1, r2 = cab_k.columns([4, 1.2], vertical_alignment="center")
+    r1.markdown(f'<div class="ruta-cab">📍 <b>{" › ".join(["KAHAI"] + elegidos)}'
                 f'</b> &nbsp;·&nbsp; filas por <b>{ver}</b></div>', unsafe_allow_html=True)
     if por != "lote" and r2.toggle("📍 Ver por lote", key="kcu_por_lote",
                                    help="Filas por lote (PLANTA), ordenadas del más caro al más barato, con su "
                                         "diferencia contra el promedio de los lotes."):
         ver, por = "Lote", "lote"
-    anios_t = sorted(base["anio"].unique())[-6:]
+    anios_t = sorted(base["anio"].unique())
+    if len(anios_t) >= 2:
+        ka1, ka2 = cols_n[-1].select_slider("Años", options=anios_t, format_func=etq_anio,
+                                            key=f"kcu_anios_{anios_t[0]}_{anios_t[-1]}",
+                                            value=(anios_t[max(0, len(anios_t) - 6)], anios_t[-1]))
+        anios_t = [a_ for a_ in anios_t if ka1 <= a_ <= ka2]
     base = base[base["anio"].isin(anios_t)]
     if base.empty:
         st.info("Sin gasto en los últimos años con estos filtros.")
@@ -1809,12 +1832,14 @@ def mostrar_cu_kahai():
 
 with pest[2]:
     if vista == "KAHAI":
-        vista_k = st.segmented_control("Ver", ["📊 Costo unitario", "🏭 Procesamiento"], default="📊 Costo unitario",
-                                       key="kahai_cu_vista", label_visibility="collapsed") or "📊 Costo unitario"
+        # El cambio Costo unitario | Procesamiento va en la misma línea del título
+        kt1, kt2 = st.columns([4.3, 1.7], vertical_alignment="center")
+        vista_k = kt2.segmented_control("Ver", ["📊 Costo unitario", "🏭 Procesamiento"], default="📊 Costo unitario",
+                                        key="kahai_cu_vista", label_visibility="collapsed") or "📊 Costo unitario"
         if vista_k.startswith("📊"):
-            mostrar_cu_kahai()
+            mostrar_cu_kahai(kt1)
         else:
-            mostrar_procesamiento_kahai()
+            mostrar_procesamiento_kahai(kt1)
     else:
         datos_cu, ultimo_cu = cargar_cu(VERSION_DATOS)
         if datos_cu.empty:
@@ -1830,9 +1855,7 @@ with pest[2]:
                 if f_ref > ultimo_cu["fecha_referencias"].iloc[0]:
                     st.warning(f"El Excel de referencias (PXN, CENSO, SYRS, ARB_TOTAL) se guardó el {f_ref}, "
                                "después del último cálculo. Corra:  python motor_costo_unitario.py")
-            if not ultimo_cu.empty:
-                st.caption(f"Último cálculo: {ultimo_cu['fecha'].iloc[0]} · referencias: "
-                           f"{os.path.basename(C.ARCHIVO_REFERENCIAS_CU)} ({ultimo_cu['fecha_referencias'].iloc[0]})")
+            calc_txt = (f" · cálculo {str(ultimo_cu['fecha'].iloc[0])[:10]}" if not ultimo_cu.empty else "")
 
             cu = datos_cu[datos_cu["naturaleza"].isin(naturalezas) & datos_cu["tipo"].isin(tipos)]
 
@@ -1845,17 +1868,16 @@ with pest[2]:
                         if re.match(r"^(ML|L)\d+$|^HMPG$", str(u).strip(), flags=re.I)}
 
             # ---- Tabla ponderada (igual a la de la app de campo / Power BI)
-            st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.1rem'>"
-                        "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Costo unitario</span>"
-                        "<span style='font-size:0.8rem;color:#6B7280'>gasto ÷ unidades de su regla (árboles, kg o sitios "
-                        "sembrados) · debajo de cada valor, con qué se dividió</span></div>", unsafe_allow_html=True)
+            cab_cu = st.container(key="cab_cu")
+            titulo_pagina("Costo unitario", "gasto ÷ unidades (árboles, kg o sitios sembrados) · debajo de cada valor, "
+                                            "con qué se dividió" + calc_txt, cab_cu)
             # Recorrido como en una junta: la empresa ya está en el encabezado; aquí se baja
             # CECO → Rubro → Detalle → Descripción (igual que KAHAI). La tabla muestra siempre el SIGUIENTE nivel
             # al último elegido; con todo elegido, una fila por lote. "Ver por lote" abre cualquier nivel por lote.
             NIVELES = [("CECO", "ceco"), ("Rubro", "rubro"), ("Detalle", "detalle"), ("Descripción", "descripcion")]
             TODOS = "Todos"
-            cols_n = st.columns([0.9, 1.1, 1.3, 1.7, 1.3])
-            eje = cols_n[0].radio("Columnas", ["Año", "Mes"], horizontal=True)
+            cols_n = cab_cu.columns(COLS_CAB, vertical_alignment="top")
+            eje = control_columnas(cols_n[0], "cu_col")
             base = cu
             elegidos_n, clave = [], "cu"
             for i, (nombre_n, campo_n) in enumerate(NIVELES):
@@ -1874,14 +1896,14 @@ with pest[2]:
             else:
                 ver, por = "Ubicación", "ubicacion"
             ruta = " › ".join([titulo_vista] + elegidos_n)
-            rc1, rc3, rc2 = st.columns([3.7, 1.1, 1.3], vertical_alignment="center")
+            rc1, rc3, rc2 = cab_cu.columns([3.7, 1.1, 1.3], vertical_alignment="center")
             # Ver por lote en cualquier nivel (ej. MIAR por lote sin elegir actividad)
             if por != "ubicacion":
                 if rc3.toggle("📍 Ver por lote", key="cu_por_lote", value=False,
                               help="Filas por lote (ubicación), ordenadas del más caro al más barato, con su "
                                    "diferencia contra el promedio de los lotes."):
                     ver, por = "Ubicación", "ubicacion"
-            rc1.markdown(f'<div style="font-size:0.82rem;color:#374151;margin:-0.35rem 0 0.1rem">📍 <b>{ruta}</b>'
+            rc1.markdown(f'<div class="ruta-cab">📍 <b>{ruta}</b>'
                          f' &nbsp;·&nbsp; filas por <b>{ver}</b></div>', unsafe_allow_html=True)
             # El costo real es gasto ÷ unidades. El ponderado de Power BI queda solo para cuadrar con el informe viejo.
             ver_pond = rc2.toggle("Ver ponderado (Power BI)", key="cu_pond", value=False,
@@ -1899,10 +1921,16 @@ with pest[2]:
                     fin_v = next((p for p in reversed(per_cu) if p <= fin_d), per_cu[-1])
                     if ini_v > fin_v:
                         ini_v, fin_v = per_cu[0], per_cu[-1]
-                    d1, d2 = st.select_slider("Meses ", options=per_cu, format_func=etiqueta, value=(ini_v, fin_v))
+                    d1, d2 = cols_n[-1].select_slider("Meses", options=per_cu, format_func=etiqueta,
+                                                      value=(ini_v, fin_v), key=f"cu_meses_{per_cu[0]}_{per_cu[-1]}")
                     base = base[(base["periodo"] >= d1) & (base["periodo"] <= d2)]
                 base = base.assign(_x=base["periodo"])
             else:
+                anios_cu = sorted(base["anio"].unique())
+                if len(anios_cu) >= 2:
+                    ca1, ca2 = cols_n[-1].select_slider("Años", options=anios_cu, format_func=etq_anio, key=f"cu_anios_{anios_cu[0]}_{anios_cu[-1]}",
+                                                        value=(anios_cu[max(0, len(anios_cu) - 6)], anios_cu[-1]))
+                    base = base[(base["anio"] >= ca1) & (base["anio"] <= ca2)]
                 base = base.assign(_x=base["anio"])
 
             if base.empty:
