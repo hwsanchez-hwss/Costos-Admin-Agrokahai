@@ -860,6 +860,11 @@ def cargar_cu(version_datos):
         cu["bloque"] = clasificar_bloque(cu)
         for col in ["ceco", "rubro", "actividad", "ubicacion", "regla_divisor", "detalle", "descripcion"]:
             cu[col] = cu[col].fillna("(sin dato)")
+        # Mismo nombre con distinta mayúscula = lo mismo: se queda la forma de escribir más usada
+        for col in ["rubro", "detalle", "descripcion"]:
+            t_ = cu[col].astype(str).str.strip()
+            forma = t_.groupby(t_.str.lower()).agg(lambda x: x.value_counts().index[0])
+            cu[col] = t_.str.lower().map(forma)
     return cu, ultimo
 
 
@@ -1773,9 +1778,9 @@ with pest[2]:
                         "<span style='font-size:0.8rem;color:#6B7280'>gasto ÷ unidades de su regla (árboles, kg o sitios "
                         "sembrados) · debajo de cada valor, con qué se dividió</span></div>", unsafe_allow_html=True)
             # Recorrido como en una junta: la empresa ya está en el encabezado; aquí se baja
-            # CECO → Rubro → Actividad → Ubicación. La tabla muestra siempre el SIGUIENTE nivel
-            # al último elegido (sin CECO elegido: una fila por CECO; con CECO: una por rubro; etc.).
-            NIVELES = [("CECO", "ceco"), ("Rubro", "rubro"), ("Actividad", "actividad"), ("Ubicación", "ubicacion")]
+            # CECO → Rubro → Detalle → Descripción (igual que KAHAI). La tabla muestra siempre el SIGUIENTE nivel
+            # al último elegido; con todo elegido, una fila por lote. "Ver por lote" abre cualquier nivel por lote.
+            NIVELES = [("CECO", "ceco"), ("Rubro", "rubro"), ("Detalle", "detalle"), ("Descripción", "descripcion")]
             TODOS = "Todos"
             cols_n = st.columns([0.9, 1.1, 1.3, 1.7, 1.3])
             eje = cols_n[0].radio("Columnas", ["Año", "Mes"], horizontal=True)
@@ -1795,11 +1800,11 @@ with pest[2]:
             if len(elegidos_n) < len(NIVELES):
                 ver, por = NIVELES[len(elegidos_n)]
             else:
-                ver, por = "Detalle", "descripcion"
+                ver, por = "Ubicación", "ubicacion"
             ruta = " › ".join([titulo_vista] + elegidos_n)
             rc1, rc3, rc2 = st.columns([3.7, 1.1, 1.3], vertical_alignment="center")
             # Ver por lote en cualquier nivel (ej. MIAR por lote sin elegir actividad)
-            if "ubicacion" not in [p_ for _, p_ in NIVELES[:len(elegidos_n)]] and por != "descripcion":
+            if por != "ubicacion":
                 if rc3.toggle("📍 Ver por lote", key="cu_por_lote", value=False,
                               help="Filas por lote (ubicación), ordenadas del más caro al más barato, con su "
                                    "diferencia contra el promedio de los lotes."):
