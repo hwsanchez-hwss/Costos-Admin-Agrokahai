@@ -759,17 +759,19 @@ st.markdown("""<style>
   .ruta-cab { font-size:0.82rem; color:#374151; }
   /* Rubros elegidos (varios): las fichas bajan de línea en vez de esconderse */
   [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] {
-        flex-wrap:wrap !important; overflow:visible !important; height:auto !important; max-height:none !important;
-        mask-image:none !important; -webkit-mask-image:none !important; padding-top:3px; padding-bottom:3px; }
-  [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] > span {
-        display:contents !important; }
-  [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] > span > span { font-size:0.76rem; max-width:100%; }
+        flex:1 1 0 !important; min-width:0 !important; flex-wrap:wrap !important; align-content:flex-start;
+        overflow-x:hidden !important; overflow-y:auto !important; max-height:3.9rem !important; height:auto !important;
+        mask-image:none !important; -webkit-mask-image:none !important; padding:2px 0 !important; gap:2px; }
+  [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] > span { display:contents !important; }
+  [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] > span > span {
+        font-size:0.7rem !important; height:1.3rem !important; padding:0 0.15rem 0 0.4rem !important; margin:0 !important;
+        max-width:100%; }
+  [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] input { min-width:1.5rem !important; width:1.5rem !important;
+        flex:1 1 1.5rem; height:1.3rem; }
   [class*="st-key-cab_"] [data-testid="stMultiSelect"] .react-aria-ComboBox > div {
-        height:auto !important; max-height:none !important; min-height:2.3rem; display:flex !important;
+        height:auto !important; max-height:4.3rem !important; min-height:2.3rem; display:flex !important;
         flex-wrap:nowrap !important; align-items:center; }
   [class*="st-key-cab_"] [data-testid="stMultiSelect"] .react-aria-ComboBox > div > button { flex:none; }
-  [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] { flex:1 1 0 !important; min-width:0 !important; }
-  [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] input { min-width:2rem !important; width:2rem !important; flex:1 1 2rem; }
   /* Botones de opciones (Abrir por, Millones/Miles/Pesos): completos, sin cortar ni desvanecer el último */
   [class*="st-key-cab_"] [data-testid="stButtonGroup"], [class*="st-key-cab_"] [data-testid="stButtonGroup"] * {
         mask-image:none !important; -webkit-mask-image:none !important; }
@@ -810,7 +812,7 @@ def elegir_nivel(lugar, nom, campo, ops, key, libre, ayuda_libre="Elija el nivel
 
 
 def texto_seleccion(sel):
-    return " + ".join(sel)
+    return " + ".join(sel) if len(sel) <= 4 else f"{len(sel)} rubros"
 
 
 AYUDA_MULTI = "Con varios rubros elegidos, la tabla se abre por rubro. Para bajar más, deje un solo rubro."       # Columnas | CECO | Rubro | Detalle | Descripción | rango
