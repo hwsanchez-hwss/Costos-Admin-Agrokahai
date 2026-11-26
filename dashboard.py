@@ -1556,6 +1556,17 @@ def mostrar_cu_kahai():
     ICONO = {"kg": "⚖️", "kg concha": "⚖️", "kg nuez pelada": "⚖️", "kg aceite": "🛢️", "kg comprados": "⚖️",
              "árb": "🌳", "plantas": "🌱"}
 
+    _kg_tabla = {}
+
+    def kg_tabla(a):
+        if a not in _kg_tabla:
+            b_a = base[(base["anio"] == a) & base["bolsa"].map(lambda b_: bool(b_) and b_[0] == "kg_lote")]
+            lotes_a = set(b_a["lote"])
+            if lotes_a - LOTES_REALES_KAHAI:            # hay gasto general de cosecha: todos los lotes
+                lotes_a = set(LOTES_REALES_KAHAI)
+            _kg_tabla[a] = sum(kgl.get((l_, a), 0) for l_ in lotes_a & LOTES_REALES_KAHAI)
+        return _kg_tabla[a]
+
     def costo_y_etiqueta(sub):
         """(costo real, etiqueta del divisor) de un grupo de filas de UN año."""
         if sub.empty:
@@ -1597,10 +1608,15 @@ def mostrar_cu_kahai():
             d_lotes = sum(mapa[(l_, a)] for l_ in con_dato)
             d_todos = sum(mapa.get((l_, a), 0) for l_ in LOTES_REALES_KAHAI)
             d_ = max(d_lotes, d_todos if general else 0)
+            if "kg_lote" in tipos_b and por != "lote":
+                # Cosecha: un solo divisor por año para TODA la tabla que se está viendo = kg de los lotes que
+                # tienen gasto de cosecha en esa tabla (si hay gasto general, todos los lotes). Así las filas
+                # suman el TOTAL. El costo de cada lote se ve con "Ver por lote".
+                d_, faltan_l, general = kg_tabla(a), [], True
             if not d_:
                 return np.nan, f"<span class='dv' style='color:#9A5B00'>{ic} sin dato</span>"
             g_ = con.loc[~con["lote"].isin(faltan_l), "valor"].sum()
-            extra = " · todos los lotes" if general and d_ == d_todos and len(reales) < 2 else ""
+            extra = ""
             falta = (f" <span style='color:#9A5B00' title='Este gasto no entra: el lote no tiene {u} ese año'>"
                      f"· falta {', '.join(LOTES_KAHAI.get(l_, l_) for l_ in faltan_l)}</span>") if faltan_l else ""
             return g_ / d_, f"<span class='dv'>{ic} {pesos(d_)} {u}{extra}{falta}</span>"
