@@ -214,10 +214,19 @@ st.markdown(f"""
   [data-testid="stMetricValue"] {{ font-size:1.65rem !important; font-weight:700; color:#111827; }}
 
   /* Pestañas */
-  .stTabs [data-baseweb="tab-list"] {{ gap:0.3rem; border-bottom:1px solid #E5E7EB; }}
-  .stTabs [data-baseweb="tab"] {{ padding:0.5rem 0.9rem; font-weight:600; }}
-  .stTabs [aria-selected="true"] {{ color:{VERDE} !important; }}
-  .stTabs [data-baseweb="tab-highlight"] {{ background-color:{VERDE} !important; }}
+  /* Pestañas principales: una barra tipo riel, la pestaña activa sólida en verde */
+  [role="tablist"] {{ gap:0.3rem !important; background:#F1F4F0; border:1px solid #E3E8E2 !important; border-radius:13px;
+        padding:4px !important; width:fit-content; max-width:100%; overflow-x:auto; margin:0.35rem 0 0.7rem;
+        box-shadow:none !important; }}
+  [role="tablist"]::before, [role="tablist"]::after {{ display:none !important; }}
+  [data-testid="stTab"] {{ padding:0.42rem 1.05rem !important; border-radius:10px; height:auto !important;
+        background:transparent; cursor:pointer; transition:background .15s, box-shadow .15s, transform .15s; }}
+  [data-testid="stTab"] p {{ font-size:0.95rem !important; font-weight:600 !important; color:#3F4A43 !important; }}
+  [data-testid="stTab"]:hover {{ background:#FFFFFF; transform:translateY(-1px); }}
+  [data-testid="stTab"]:hover p {{ color:{VERDE} !important; }}
+  [data-testid="stTab"][aria-selected="true"] {{ background:{VERDE} !important; box-shadow:0 4px 10px -3px rgba(27,94,32,0.55); }}
+  [data-testid="stTab"][aria-selected="true"] p {{ color:#FFFFFF !important; }}
+  [data-testid="stTab"] .react-aria-SelectionIndicator {{ display:none !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -608,7 +617,8 @@ with encabezado:
     for aviso in pendientes:
         st.warning(aviso, icon="⏳")
 
-pest = st.tabs(["Resumen", "Tabla mensual", "Costo unitario", "Gerentes", "Intercompañía", "Movimientos", "Cargas"])
+pest = st.tabs(["📊 Resumen", "🗓️ Tabla mensual", "🧮 Costo unitario", "👔 Gerentes", "🔄 Intercompañía",
+               "📋 Movimientos", "📥 Cargas"])
 
 
 # ===============================================================
