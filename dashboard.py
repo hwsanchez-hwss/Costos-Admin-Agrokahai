@@ -1692,16 +1692,14 @@ with pest[2]:
                         if eje == "Año":
                             v, resp = divisor_anio(b, int(c), regla) if regla else (arb_anio.get(int(c)), False)
                             if resp and not v:
-                                return (f'<th class="anio">{c}<div class="sub resp" title="Sin divisor este año: '
-                                        f'el costo queda en blanco">{icono} sin dato</div></th>')
+                                return f'<th class="anio">{c}</th>'   # el divisor va debajo de cada valor, no en el encabezado
                             if v and resp:
-                                return (f'<th class="anio">{c}<div class="sub resp" title="Sin dato propio de la regla '
-                                        f'este año: se dividió por árboles vivos">🌳 {pesos(v)} *</div></th>')
+                                return f'<th class="anio">{c}</th>'   # el divisor va debajo de cada valor, no en el encabezado
                             if v:
                                 uni = " kg" if regla == "PXN_KG" else ""
                                 txt_cab[c] = f"{icono} {pesos(v)}"
                                 div_cab[c] = v
-                                return f'<th class="anio">{c}<div class="sub">{icono} {pesos(v)}{uni}</div></th>'
+                                return f'<th class="anio">{c}</th>'
                         return f'<th class="anio">{c}</th>'
                     cab = (f'<tr><th class="izq">{_html.escape(nombre_c)}</th><th>Gasto total</th><th>% del gasto</th>'
                            + (f'<th class="anio">Costo {vs_ref}</th><th class="anio">vs promedio<div class="sub">lotes {vs_ref}</div></th>'
@@ -1853,11 +1851,10 @@ with pest[2]:
                             otras = f" · {', '.join(map(str, otros_r))}: su propio divisor, en gris."
                         CORTO = {"PXN_KG": "kg cosechados", "CENSO": "árboles del censo", "SITIOS_SIEMBRA": "sitios sembrados",
                                  "SYRS_ARBOLES": "árboles sembrados/resembrados", "ARB_TOTALVIVOS": "árboles vivos"}
-                        st.caption(f"Encabezado: {CORTO.get(regla_t, regla_t)} ({regla_t}).{otras}{txt_resp}")
+                        st.caption(f"Debajo de cada valor: con qué se dividió ({CORTO.get(regla_t, regla_t)}).{otras}{txt_resp}")
                     else:
                         reglas_t = ", ".join(sorted(str(x) for x in base["regla_divisor"].dropna().unique()))
-                        st.caption("Encabezado: árboles vivos, como referencia. Cada fila usa su propia regla; "
-                                   "cuando es distinta se ve en gris debajo del valor.")
+                        st.caption("Cada fila usa su propia regla; debajo de cada valor se ve con qué se dividió.")
                     # Aviso automático cuando la base cambia mucho de un año a otro
                     serie = (pro_a.groupby("anio")["valor"].sum() / base.groupby("anio")["valor"].sum()).fillna(0)
                     serie = serie.reindex(sorted(base["anio"].dropna().unique())).fillna(0)
