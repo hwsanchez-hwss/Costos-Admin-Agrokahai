@@ -60,6 +60,32 @@ COLS_LOTES = {"AÑO": "anio", "LOTE ACEITE": "lote", "NUEZ TESTA (kg)": "nuez_te
               "NUEZ PARA ACEITE (kg)": "nuez_aceite", "ACEITE (kg)": "aceite"}
 
 
+def leer_vivero_fruta(ruta=None):
+    """Hojas VIVERO (AÑO, PLANTAS PRODUCIDAS) y FRUTA_COMPRADA (AÑO, TIPO, KG COMPRADOS): divisores del costo
+    unitario de los CECO VIVERO y FRUTA de KAHAI. Si no existen, tablas vacías."""
+    ruta = ruta or C.ARCHIVO_PRODUCCION_KAHAI
+    temporal = os.path.join(tempfile.gettempdir(), "lectura_vivero_fruta.xlsx")
+    shutil.copy2(ruta, temporal)
+    try:
+        hojas = pd.read_excel(temporal, sheet_name=None)
+    finally:
+        os.remove(temporal)
+    viv = pd.DataFrame(columns=["anio", "plantas"])
+    fru = pd.DataFrame(columns=["anio", "tipo", "kg"])
+    if "VIVERO" in hojas:
+        h = hojas["VIVERO"].iloc[:, :2]
+        h.columns = ["anio", "plantas"]
+        h = h[pd.to_numeric(h["anio"], errors="coerce").notna()].copy()
+        viv = pd.DataFrame({"anio": pd.to_numeric(h["anio"]).astype(int), "plantas": pd.to_numeric(h["plantas"], errors="coerce")})
+    if "FRUTA_COMPRADA" in hojas:
+        h = hojas["FRUTA_COMPRADA"].iloc[:, :3]
+        h.columns = ["anio", "tipo", "kg"]
+        h = h[pd.to_numeric(h["anio"], errors="coerce").notna() & h["tipo"].notna()].copy()
+        fru = pd.DataFrame({"anio": pd.to_numeric(h["anio"]).astype(int), "tipo": h["tipo"].astype(str).str.strip().str.upper(),
+                            "kg": pd.to_numeric(h["kg"], errors="coerce")})
+    return viv.reset_index(drop=True), fru.reset_index(drop=True)
+
+
 def leer_cultivo_lotes(ruta=None):
     """Hoja CULTIVO_LOTES: árboles y kg cosechados de cada BLOQUE de los lotes de cultivo de KAHAI por año
     (Cumaral = bloques HM y MME; Restrepo = MPB). La app suma los bloques de cada lote. Vacío = sin dato."""
@@ -115,6 +141,10 @@ def correr():
     con = sqlite3.connect(C.BASE_LOCAL)
     div.to_sql("kahai_divisores", con, if_exists="replace", index=False)
     reg.to_sql("kahai_reglas_proc", con, if_exists="replace", index=False)
+    viv, fru = leer_vivero_fruta(ruta)
+    viv.to_sql("kahai_vivero", con, if_exists="replace", index=False)
+    fru.to_sql("kahai_fruta_comprada", con, if_exists="replace", index=False)
+    print(f"Vivero: {viv['plantas'].notna().sum()} años con plantas · Fruta comprada: {fru['kg'].notna().sum()} datos de kg")
     cult = leer_cultivo_lotes(ruta)
     cult.to_sql("kahai_cultivo_lotes", con, if_exists="replace", index=False)
     print(f"Cultivo por lote: {cult['arboles'].notna().sum()} años con árboles, {cult['kg'].notna().sum()} con kg")

@@ -19,7 +19,8 @@ import config as C
 # Tablas que se suben a la nube (y que el dashboard lee)
 TABLAS_NUBE = ["agrocacay_vigente", "kahai_vigente", "agrocacay_costo_unitario",
                "historial_cargas", "calculos_cu", "kahai_divisores", "kahai_reglas_proc",
-               "kahai_lotes_aceite", "kahai_cultivo_lotes"]
+               "kahai_lotes_aceite", "kahai_cultivo_lotes",
+               "kahai_vivero", "kahai_fruta_comprada"]
 FILAS_POR_PARTE = 10_000   # Turso corta respuestas muy grandes: se lee por partes
 
 

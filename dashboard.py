@@ -1401,12 +1401,243 @@ def mostrar_cultivo_kahai():
     st.plotly_chart(fig, width="stretch")
 
 
+PRODUCTOS_KAHAI = {"hidratante", "proteina", "proteína", "blister", "jabon", "jabón", "miel", "harina", "accesorios",
+                   "exfoliante", "galletas", "lipstick"}
+GENERALES_KAHAI = "kg de aceite producido (fila FILTRADO de la hoja DIVISORES)"
+
+
+def mostrar_cu_kahai():
+    """Costo unitario de KAHAI con el mismo formato de AGROCACAY: costo real (gasto ÷ unidades) y, debajo de cada
+    valor, con qué se dividió. Reglas (acordadas con Wal):
+      CULTIVO        -> lote = PLANTA. Cosecha / fruto verde ÷ kg del lote; lo demás ÷ árboles del lote
+                        (hoja CULTIVO_LOTES; Cumaral = HM + MME).
+      POSCOSECHA     -> ÷ kg de concha procesada (DIVISORES).
+      PROCESAMIENTO  -> Nuez ÷ kg nuez pelada; aceite y gastos generales de planta ÷ kg de aceite (Extracción ÷ EXTRACCIÓN);
+                        productos (hidratante, proteína, jabón…) sin divisor por ahora.
+      FRUTA          -> ÷ kg comprados de ese tipo (hoja FRUTA_COMPRADA).
+      VIVERO         -> ÷ plantas producidas (hoja VIVERO).
+      Generales (ADMINISTRATIVO, COMERCIALIZACIÓN, ALMACEN, INFRAESTRUCTURA…) -> ÷ kg de aceite producido.
+    Celdas que mezclan unidades: ÷ árboles (si todo es cultivo) o ÷ kg de aceite (costo de la empresa por kg)."""
+    import html as _h
+    import re as _re
+    k = datos[(datos["empresa"] == "KAHAI") & datos["naturaleza"].isin(naturalezas) & datos["tipo"].isin(tipos)].copy()
+    if k.empty:
+        st.info("No hay gasto de KAHAI con estos filtros.")
+        return
+    k["anio"] = (k["periodo"] // 100).astype(int)
+    for c_ in ["ceco", "rubro", "detalle", "descripcion", "actividad", "planta"]:
+        k[c_] = k[c_].fillna("").astype(str).str.strip() if c_ in k.columns else ""
+    k["lote"] = k["planta"].str.upper().replace("", "(sin lote)")
+
+    # ---- Divisores
+    dv = F.leer_tabla("kahai_divisores")
+    kgdiv = {(str(d_).upper(), int(a_)): v_ for d_, a_, v_ in zip(dv.get("divisor", []), dv.get("anio", []), dv.get("kg", []))
+             if pd.notna(v_) and v_ > 0} if not dv.empty else {}
+    cl = F.leer_tabla("kahai_cultivo_lotes")
+    arb, kgl = {}, {}
+    if not cl.empty:
+        cl["lote"] = cl["lote"].astype(str).str.strip().str.upper()
+        for c_ in ["arboles", "kg"]:
+            cl[c_] = pd.to_numeric(cl[c_], errors="coerce")
+        sm = cl.groupby(["lote", "anio"])[["arboles", "kg"]].sum(min_count=1)
+        arb = {(l_, int(a_)): v_ for (l_, a_), v_ in sm["arboles"].items() if pd.notna(v_) and v_ > 0}
+        kgl = {(l_, int(a_)): v_ for (l_, a_), v_ in sm["kg"].items() if pd.notna(v_) and v_ > 0}
+    vv = F.leer_tabla("kahai_vivero")
+    plantas = {int(a_): v_ for a_, v_ in zip(vv.get("anio", []), pd.to_numeric(vv.get("plantas", pd.Series(dtype=float)),
+                                                                            errors="coerce")) if pd.notna(v_) and v_ > 0} \
+        if not vv.empty else {}
+    fc = F.leer_tabla("kahai_fruta_comprada")
+    kgf = {}
+    if not fc.empty:
+        fc["tipo"] = fc["tipo"].astype(str).str.strip().str.upper()
+        kgf = {(t_, int(a_)): v_ for (t_, a_), v_ in
+               fc.groupby(["tipo", "anio"])["kg"].sum(min_count=1).items() if pd.notna(v_) and v_ > 0}
+
+    # ---- Regla de cada fila: unidad, tipo de suma y "bolsa" de divisor
+    #  suma   = bolsas en paralelo (lotes, tipos de fruta): gasto total ÷ suma de las unidades
+    #  etapa  = etapas en serie de la empresa (concha, nuez, aceite): se suman los $/unidad de cada etapa
+    def regla_fila(ceco, rubro, detalle, lote):
+        ce, rb, de = ceco.upper(), rubro.lower(), detalle.lower()
+        rb_base = _re.sub(r"_(hm|mpb)$", "", rb)
+        if ce == "CULTIVO":
+            if rb_base.startswith(("cosecha", "fruto verde")):
+                return ("kg", "suma", ("kg_lote", lote))
+            return ("árb", "suma", ("arb_lote", lote))
+        if ce == "POSCOSECHA":
+            return ("kg concha", "etapa", ("div", "CONCHA PROCESADA"))
+        if ce == "PROCESAMIENTO":
+            if rb_base in PRODUCTOS_KAHAI:
+                return ("sin divisor", "", None)
+            if rb_base.startswith("nuez"):
+                return ("kg nuez pelada", "etapa", ("div", "NUEZ PELADA"))
+            if rb_base.startswith("aceite") and de.startswith("extracci"):
+                return ("kg aceite", "etapa", ("div", "EXTRACCIÓN"))
+            return ("kg aceite", "etapa", ("div", "FILTRADO"))
+        if ce == "FRUTA":
+            return ("kg comprados", "suma", ("fruta", rubro.upper()))
+        if ce == "VIVERO":
+            return ("plantas", "etapa", ("plantas", ""))
+        return ("kg aceite", "etapa", ("div", "FILTRADO"))
+
+    combos = k[["ceco", "rubro", "detalle", "lote"]].drop_duplicates()
+    reglas_c = {tuple(r_): regla_fila(*r_) for r_ in combos.itertuples(index=False, name=None)}
+    trip = [reglas_c[t_] for t_ in zip(k["ceco"], k["rubro"], k["detalle"], k["lote"])]
+    k["unidad"] = [t_[0] for t_ in trip]
+    k["suma"] = [t_[1] for t_ in trip]
+    k["bolsa"] = [t_[2] for t_ in trip]
+
+    def valor_bolsa(bolsa, a):
+        if bolsa is None:
+            return None
+        t_, n_ = bolsa
+        return {"kg_lote": kgl, "arb_lote": arb}.get(t_, {}).get((n_, a)) if t_ in ("kg_lote", "arb_lote") else \
+            kgdiv.get((n_, a)) if t_ == "div" else kgf.get((n_, a)) if t_ == "fruta" else plantas.get(a)
+
+    ICONO = {"kg": "⚖️", "kg concha": "⚖️", "kg nuez pelada": "⚖️", "kg aceite": "🛢️", "kg comprados": "⚖️",
+             "árb": "🌳", "plantas": "🌱"}
+
+    def costo_y_etiqueta(sub):
+        """(costo real, etiqueta del divisor) de un grupo de filas de UN año."""
+        if sub.empty:
+            return np.nan, ""
+        a = int(sub["anio"].iloc[0])
+        con = sub[sub["unidad"] != "sin divisor"]
+        unidades = set(con["unidad"])
+        if not unidades:
+            return np.nan, "<span class='dv'>sin divisor</span>"
+        if len(unidades) > 1:
+            if set(sub["ceco"].str.upper()) == {"CULTIVO"}:
+                lotes_ = {b_[1] for b_ in con["bolsa"] if b_}
+                d_ = sum(arb.get((l_, a), 0) for l_ in lotes_)
+                if d_:
+                    return sub["valor"].sum() / d_, f"<span class='dv'>🌳 {pesos(d_)} árb · varias reglas</span>"
+                return np.nan, "<span class='dv' style='color:#9A5B00'>🌳 sin árboles</span>"
+            d_ = kgdiv.get(("FILTRADO", a))
+            if d_:
+                return sub["valor"].sum() / d_, f"<span class='dv'>🛢️ {pesos(d_)} kg aceite · varias reglas</span>"
+            return np.nan, "<span class='dv' style='color:#9A5B00'>sin kg de aceite</span>"
+        u = unidades.pop()
+        ic = ICONO.get(u, "")
+        bolsas = con.groupby(con["bolsa"].map(str))
+        vals = {b_: (g_["valor"].sum(), valor_bolsa(g_["bolsa"].iloc[0], a)) for b_, g_ in bolsas}
+        faltan = [b_ for b_, (_, d_) in vals.items() if not d_]
+        if len(faltan) == len(vals):
+            return np.nan, f"<span class='dv' style='color:#9A5B00'>{ic} sin dato</span>"
+        if con["suma"].iloc[0] == "suma":
+            g_ok = sum(g_ for g_, d_ in vals.values() if d_)
+            d_ok = sum(d_ for _, d_ in vals.values() if d_)
+            extra = " · falta dato" if faltan else ""
+            return g_ok / d_ok, f"<span class='dv'>{ic} {pesos(d_ok)} {u}{extra}</span>"
+        c_ = sum(g_ / d_ for g_, d_ in vals.values() if d_)
+        ds = sorted({d_ for _, d_ in vals.values() if d_})
+        txt = f"{pesos(ds[0])} {u}" if len(ds) == 1 else f"{u} · {len(ds)} etapas"
+        return c_, f"<span class='dv'>{ic} {txt}{' · falta dato' if faltan else ''}</span>"
+
+    # ---- Recorrido CECO › Rubro › Actividad › Lote (como en AGROCACAY)
+    st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.1rem'>"
+                "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Costo unitario</span>"
+                "<span style='font-size:0.8rem;color:#6B7280'>gasto ÷ unidades (kg, árboles, plantas) · debajo de cada "
+                "valor, con qué se dividió</span></div>", unsafe_allow_html=True)
+    NIV = [("CECO", "ceco"), ("Rubro", "rubro"), ("Actividad", "actividad"), ("Lote", "lote")]
+    cols_n = st.columns([1, 1, 1.3, 1])
+    base, elegidos = k, []
+    for i, (nom, campo) in enumerate(NIV):
+        libre = len(elegidos) < i
+        ops = sorted(base[campo].replace("", np.nan).dropna().unique().tolist()) if not libre else []
+        val = cols_n[i].selectbox(nom, ["Todos"] + ops, key=f"kcu_{'_'.join(elegidos)}_{campo}", disabled=libre)
+        if val != "Todos" and not libre:
+            base = base[base[campo] == val]
+            elegidos.append(val)
+    ver, por = (NIV[len(elegidos)] if len(elegidos) < len(NIV) else ("Detalle", "descripcion"))
+    r1, r2 = st.columns([4, 1.2], vertical_alignment="center")
+    r1.markdown(f'<div style="font-size:0.82rem;color:#374151;margin:-0.35rem 0 0.1rem">📍 <b>{" › ".join(["KAHAI"] + elegidos)}'
+                f'</b> &nbsp;·&nbsp; filas por <b>{ver}</b></div>', unsafe_allow_html=True)
+    if por != "lote" and r2.toggle("📍 Ver por lote", key="kcu_por_lote",
+                                   help="Filas por lote (PLANTA), ordenadas del más caro al más barato, con su "
+                                        "diferencia contra el promedio de los lotes."):
+        ver, por = "Lote", "lote"
+    anios_t = sorted(base["anio"].unique())[-6:]
+    base = base[base["anio"].isin(anios_t)]
+    if base.empty:
+        st.info("Sin gasto en los últimos años con estos filtros.")
+        return
+
+    filas_k = base.groupby(por)["valor"].sum().sort_values(ascending=False)
+    celdas = {(f_, a_): costo_y_etiqueta(g_) for (f_, a_), g_ in base.groupby([por, "anio"])}
+    tot = {a_: costo_y_etiqueta(g_) for a_, g_ in base.groupby("anio")}
+    orden = list(filas_k.index)
+    vs, a_ref = {}, (anio if anio in anios_t else anios_t[-1])
+    if por == "lote":
+        lotes_ok = [l_ for l_ in orden if l_ in LOTES_KAHAI and l_ != "VILLA/CIO"]
+        prom = costo_y_etiqueta(base[(base["anio"] == a_ref) & base["lote"].isin(lotes_ok)])[0]
+        for l_ in lotes_ok:
+            v_ = celdas.get((l_, a_ref), (np.nan, ""))[0]
+            vs[l_] = (v_ / prom - 1) if prom and pd.notna(v_) else None
+        orden = sorted(lotes_ok, key=lambda l_: -(celdas.get((l_, a_ref), (np.nan,))[0]
+                                                  if pd.notna(celdas.get((l_, a_ref), (np.nan,))[0]) else -1e18)) + \
+            [o for o in orden if o not in lotes_ok]
+
+    def td(v, etq):
+        if v is None or pd.isna(v):
+            return f"<td>—{('<br>' + etq) if etq and 'sin' in etq else ''}</td>"
+        return f"<td>{unitario(v)}{etq}</td>"
+
+    def badge(v):
+        if v is None:
+            return "<td>—</td>"
+        cl_ = "alto" if v > 0.10 else ("bajo" if v < -0.10 else "medio")
+        return f'<td><span class="vs {cl_}">{porcentaje(v)}</span></td>'
+
+    con_vs = por == "lote"
+    cab = (f"<tr><th class='izq'>{ver}</th><th>Gasto total</th><th>% del gasto</th>"
+           + (f"<th class='anio'>vs promedio<div class='sub'>lotes {a_ref}</div></th>" if con_vs else "")
+           + "".join(f"<th class='anio'>{a_}</th>" for a_ in anios_t) + "</tr>")
+    total_g = base["valor"].sum()
+    filas = []
+    for f_ in orden:
+        nombre = LOTES_KAHAI.get(f_, f_) if por == "lote" else f_
+        filas.append(f"<tr><td class='izq'>{_h.escape(str(nombre))}</td><td>{millones(filas_k[f_])}</td>"
+                     + "<td>" + f"{filas_k[f_] / total_g:.1%}".replace(".", ",") + "</td>"
+                     + (badge(vs.get(f_)) if con_vs else "")
+                     + "".join(td(*celdas.get((f_, a_), (np.nan, ""))) for a_ in anios_t) + "</tr>")
+    filas.append(f"<tr class='tot'><td class='izq'>TOTAL</td><td>{millones(total_g)}</td><td>100,0%</td>"
+                 + ("<td></td>" if con_vs else "") + "".join(td(*tot.get(a_, (np.nan, ""))) for a_ in anios_t) + "</tr>")
+    st.markdown("""<style>
+      .tck { overflow-x:auto; border:1px solid #E5E7EB; border-radius:10px; }
+      .tck table { border-collapse:collapse; width:100%; font-size:0.81rem; font-variant-numeric:tabular-nums; }
+      .tck th { background:#F6F8F5; color:#374151; font-weight:600; text-align:right; padding:0.32rem 0.45rem;
+                border-bottom:1px solid #E1E8DF; white-space:nowrap; }
+      .tck th.anio { text-align:center; } .tck .izq { text-align:left; white-space:normal; min-width:120px; max-width:200px; }
+      .tck th .sub { font-size:0.66rem; font-weight:600; color:#1B5E20; }
+      .tck td { text-align:right; padding:0.22rem 0.45rem; border-bottom:1px solid #F0F2F0; white-space:nowrap; }
+      .tck tr.tot td { font-weight:700; border-top:2px solid #CBD5CC; background:#FAFBFA; }
+      .tck .dv { display:block; font-size:0.66rem; color:#8A949B; font-weight:400; }
+      .tck .vs { display:inline-block; min-width:3.6rem; text-align:center; padding:1px 8px; border-radius:999px;
+                 font-weight:700; font-size:0.76rem; }
+      .tck .vs.alto { background:#FDECEA; color:#B42318; } .tck .vs.bajo { background:#E7F5EC; color:#067647; }
+      .tck .vs.medio { background:#F2F4F7; color:#475467; }
+    </style>""", unsafe_allow_html=True)
+    st.markdown(f"<div class='tck'><table><thead>{cab}</thead><tbody>{''.join(filas)}</tbody></table></div>",
+                unsafe_allow_html=True)
+    faltan_txt = []
+    if not plantas and (base["ceco"].str.upper() == "VIVERO").any():
+        faltan_txt.append("plantas producidas del vivero (hoja VIVERO)")
+    if not kgf and (base["ceco"].str.upper() == "FRUTA").any():
+        faltan_txt.append("kg de fruta comprada (hoja FRUTA_COMPRADA)")
+    if not arb and (base["ceco"].str.upper() == "CULTIVO").any():
+        faltan_txt.append("árboles y kg por lote (hoja CULTIVO_LOTES)")
+    st.caption("Cultivo: cosecha ÷ kg del lote, lo demás ÷ árboles (Cumaral = HM + MME) · Poscosecha ÷ kg de concha · "
+               "Nuez ÷ kg nuez pelada · Aceite y gastos generales ÷ kg de aceite · Productos (hidratante, proteína…): "
+               "sin divisor por ahora. Si una fila mezcla unidades, se divide por kg de aceite (o por árboles en cultivo)."
+               + (f" ⚠️ Falta en Graficas\\\\PRODUCCION_KAHAI.xlsx: {'; '.join(faltan_txt)}." if faltan_txt else ""))
+
+
 with pest[2]:
     if vista == "KAHAI":
-        vista_k = st.segmented_control("Ver", ["🌱 Cultivo por lote", "🏭 Procesamiento"], default="🌱 Cultivo por lote",
-                                       key="kahai_cu_vista", label_visibility="collapsed") or "🌱 Cultivo por lote"
-        if vista_k.startswith("🌱"):
-            mostrar_cultivo_kahai()
+        vista_k = st.segmented_control("Ver", ["📊 Costo unitario", "🏭 Procesamiento"], default="📊 Costo unitario",
+                                       key="kahai_cu_vista", label_visibility="collapsed") or "📊 Costo unitario"
+        if vista_k.startswith("📊"):
+            mostrar_cu_kahai()
         else:
             mostrar_procesamiento_kahai()
     else:
