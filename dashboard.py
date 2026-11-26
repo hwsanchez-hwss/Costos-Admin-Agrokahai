@@ -1480,6 +1480,12 @@ def mostrar_cu_kahai():
     k["anio"] = (k["periodo"] // 100).astype(int)
     for c_ in ["ceco", "rubro", "detalle", "descripcion", "actividad", "planta"]:
         k[c_] = k[c_].fillna("").astype(str).str.strip() if c_ in k.columns else ""
+    # Mismo nombre con distinta mayúscula = lo mismo ("Mano de Obra" / "Mano de obra", "Cosecha" / "cosecha")
+    for c_ in ["rubro", "detalle", "descripcion"]:    # se queda la forma de escribir más usada
+        forma = k.groupby(k[c_].str.lower())[c_].agg(lambda x: x.value_counts().index[0])
+        k[c_] = k[c_].str.lower().map(forma)
+    for c_ in ["detalle", "descripcion"]:
+        k[c_] = k[c_].replace("", "(sin dato)")
     k["lote"] = k["planta"].str.upper().replace("", "(sin lote)")
 
     # ---- Divisores
@@ -1591,7 +1597,8 @@ def mostrar_cu_kahai():
                 "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Costo unitario</span>"
                 "<span style='font-size:0.8rem;color:#6B7280'>gasto ÷ unidades (kg, árboles, plantas) · debajo de cada "
                 "valor, con qué se dividió</span></div>", unsafe_allow_html=True)
-    NIV = [("CECO", "ceco"), ("Rubro", "rubro"), ("Actividad", "actividad"), ("Lote", "lote")]
+    # En KAHAI la columna Actividad cambia de nombre entre años y trae facturas: se baja por Detalle y Descripción
+    NIV = [("CECO", "ceco"), ("Rubro", "rubro"), ("Detalle", "detalle"), ("Descripción", "descripcion")]
     cols_n = st.columns([1, 1, 1.3, 1])
     base, elegidos = k, []
     for i, (nom, campo) in enumerate(NIV):
@@ -1601,7 +1608,7 @@ def mostrar_cu_kahai():
         if val != "Todos" and not libre:
             base = base[base[campo] == val]
             elegidos.append(val)
-    ver, por = (NIV[len(elegidos)] if len(elegidos) < len(NIV) else ("Detalle", "descripcion"))
+    ver, por = (NIV[len(elegidos)] if len(elegidos) < len(NIV) else ("Lote", "lote"))
     r1, r2 = st.columns([4, 1.2], vertical_alignment="center")
     r1.markdown(f'<div style="font-size:0.82rem;color:#374151;margin:-0.35rem 0 0.1rem">📍 <b>{" › ".join(["KAHAI"] + elegidos)}'
                 f'</b> &nbsp;·&nbsp; filas por <b>{ver}</b></div>', unsafe_allow_html=True)
