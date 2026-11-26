@@ -729,8 +729,8 @@ with pest[1]:
     # Tabla mensual con el mismo formato del costo unitario: se baja CECO › Rubro › Actividad › Ubicación
     st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.1rem'>"
                 "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Tabla mensual</span>"
-                "<span style='font-size:0.8rem;color:#6B7280'>gasto por mes en millones de pesos · el color marca los "
-                "meses de mayor gasto de cada fila</span></div>", unsafe_allow_html=True)
+                "<span style='font-size:0.8rem;color:#6B7280'>el color marca los periodos de mayor gasto de cada fila · "
+                "pase el mouse por una cifra para ver el valor exacto en pesos</span></div>", unsafe_allow_html=True)
     tm = df.copy()
     tm["ubic"] = tm["ubicacion"].fillna("").astype(str).str.strip()
     if "planta" in tm.columns:        # KAHAI no llena Ubicación: el lote está en PLANTA
@@ -772,7 +772,11 @@ with pest[1]:
     sig = NIV_TM[len(elegidos_t)] if len(elegidos_t) < len(NIV_TM) else ("Ubicación / Lote", "ubic")
     ABRIR = {"Siguiente nivel": sig, "Lote / ubicación": ("Ubicación / Lote", "ubic"), "Actividad": ("Actividad", "actividad"),
              "Tercero": ("Tercero", "tercero"), "Mano de obra / otros": ("Mano de obra / otros", "bloque")}
-    r1, r2 = st.columns([2.2, 3], vertical_alignment="center")
+    r1, r2, r3 = st.columns([2.0, 3, 1.35], vertical_alignment="center")
+    unidad = r3.segmented_control("Cifras en", ["Millones", "Miles", "Pesos"], default="Millones", key="tm_unidad",
+                                  label_visibility="collapsed",
+                                  help="Millones para la vista gerencial; Miles o Pesos para cuadrar contra la contabilidad."
+                                  ) or "Millones"
     abrir = r2.segmented_control("Abrir por", list(ABRIR), default="Siguiente nivel", key="tm_abrir",
                                  label_visibility="collapsed") or "Siguiente nivel"
     ver_t, por_t = ABRIR[abrir]
@@ -799,25 +803,38 @@ with pest[1]:
             piv = pd.concat([piv.iloc[:n_max], resto.sum().to_frame(f"Otras ({len(resto)})").T])
         total_t = piv.sum()
 
+        def pesos_(v):     # valor exacto: $88.412.537
+            return "$" + f"{v:,.0f}".replace(",", ".")
+
+        div_u, dec_u = {"Millones": (1e6, 1), "Miles": (1e3, 0), "Pesos": (1, 0)}[unidad]
+
         def m_(v):
             if not v:
                 return "—"
-            return f"{v / 1e6:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            return f"{v / div_u:,.{dec_u}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+        esc_ = __import__('html').escape
+
+        def tip_(v, nombre, col):    # recuadro con la cifra exacta al pasar el mouse
+            if not v:
+                return ""
+            return f" data-tip='{esc_(pesos_(v) + ' · ' + str(nombre) + ' · ' + col, quote=True)}'"
 
         def fila_html(nombre, fila, clase=""):
             vals = [fila[p_] for p_ in meses_rango]
             tope = max([abs(v_) for v_ in vals] + [1])
             celdas = ""
-            for v_ in vals:
-                a_ = 0 if clase or not v_ else 0.06 + 0.30 * abs(v_) / tope     # intensidad según el mes más alto
+            for p_, v_ in zip(meses_rango, vals):
+                a_ = 0 if clase or not v_ else 0.06 + 0.30 * abs(v_) / tope     # intensidad según el periodo más alto
                 estilo = f" style='background:rgba(27,94,32,{a_:.2f})'" if a_ else ""
-                celdas += f"<td{estilo}>{m_(v_)}</td>"
+                celdas += f"<td{estilo}{tip_(v_, nombre, etq_col(p_))}>{m_(v_)}</td>"
             pct = fila["Total"] / total_t["Total"] if total_t["Total"] else 0
             pct_txt = f"{pct:.1%}".replace(".", ",")
-            return (f"<tr{clase}><td class='izq'>{__import__('html').escape(str(nombre))}</td>{celdas}"
-                    f"<td class='tt'>{m_(fila['Total'])}</td><td class='pc'>{pct_txt}</td></tr>")
+            return (f"<tr{clase}><td class='izq'>{esc_(str(nombre))}</td>{celdas}"
+                    f"<td class='tt'{tip_(fila['Total'], nombre, 'Total')}>{m_(fila['Total'])}</td>"
+                    f"<td class='pc'>{pct_txt}</td></tr>")
 
-        cab_t = ("<tr><th class='izq'>" + ver_t + "</th>" + "".join(f"<th>{etq_col(p_)}</th>" for p_ in meses_rango)
+        cab_t = ("<tr><th class='izq'>" + ver_t + f" <span class='uni'>· {'$ millones' if unidad == 'Millones' else '$ miles' if unidad == 'Miles' else 'pesos'}</span></th>" + "".join(f"<th>{etq_col(p_)}</th>" for p_ in meses_rango)
                  + "<th>Total</th><th>%</th></tr>")
         filas_t = [fila_html(n_, f_) for n_, f_ in piv.iterrows()]
         filas_t.append(fila_html("TOTAL", total_t, " class='tot'"))
@@ -832,6 +849,13 @@ with pest[1]:
           .ttm td.tt { font-weight:700; background:#FAFBFA; border-left:1px solid #E5E7EB; }
           .ttm td.pc { color:#6B7280; }
           .ttm tr.tot td { font-weight:800; border-top:2px solid #CBD5CC; background:#F3F6F3; }
+          .ttm td[data-tip] { position:relative; cursor:default; }
+          .ttm td[data-tip]:hover { outline:2px solid #1B5E20; outline-offset:-2px; }
+          .ttm td[data-tip]:hover::after { content:attr(data-tip); position:absolute; right:0; bottom:100%;
+                    z-index:20; background:#1F2937; color:#fff; font-weight:600; font-size:0.76rem;
+                    padding:0.22rem 0.5rem; border-radius:6px; white-space:nowrap; pointer-events:none;
+                    box-shadow:0 2px 8px rgba(0,0,0,0.18); }
+          .ttm .uni { text-align:left; color:#6B7280; font-weight:500; font-size:0.72rem; }
         </style>""", unsafe_allow_html=True)
         st.markdown(f"<div class='ttm'><table><thead>{cab_t}</thead><tbody>{html_t}</tbody></table></div>",
                     unsafe_allow_html=True)
@@ -839,7 +863,7 @@ with pest[1]:
         if n_filas > n_max + 1:
             st.toggle(f"Ver todas las filas ({n_filas})", key="tm_todas",
                       help="Por defecto se muestran las 15 de mayor gasto y el resto se junta en 'Otras'.")
-        st.caption(f"Millones de pesos · {etq_col(meses_rango[0])} a {etq_col(meses_rango[-1])} · % = parte del total "
+        st.caption(f"{ {'Millones': 'Millones de pesos', 'Miles': 'Miles de pesos', 'Pesos': 'Pesos'}[unidad]} · {etq_col(meses_rango[0])} a {etq_col(meses_rango[-1])} · % = parte del total "
                    "del periodo. Con 'Abrir por' se ve la misma selección por lote, actividad, tercero o mano de obra.")
 
         def excel_tabla(d=d_t):
@@ -848,12 +872,21 @@ with pest[1]:
             px.columns = [etq_col(c_) for c_ in px.columns]
             px["Total"] = px.sum(axis=1)
             salida = io.BytesIO()
-            px.reset_index().rename(columns={**{c_: n_ for n_, c_ in NIV_TM}, "ubic": "Ubicación / Lote",
-                                             "actividad": "Actividad"}).to_excel(salida, index=False,
-                                                                                   sheet_name="Tabla mensual")
+            hoja = px.reset_index().rename(columns={**{c_: n_ for n_, c_ in NIV_TM}, "ubic": "Ubicación / Lote",
+                                                    "actividad": "Actividad"})
+            with pd.ExcelWriter(salida, engine="openpyxl") as xw:
+                hoja.to_excel(xw, index=False, sheet_name="Tabla mensual")
+                ws = xw.sheets["Tabla mensual"]
+                n_txt = len(campos_x)
+                for col_x in ws.iter_cols(min_col=n_txt + 1, max_col=ws.max_column, min_row=2):
+                    for c_x in col_x:
+                        c_x.number_format = '"$"#,##0'          # pesos exactos, sin redondear a millones
+                for i_x, nom_x in enumerate(hoja.columns, start=1):
+                    ws.column_dimensions[ws.cell(1, i_x).column_letter].width = 22 if i_x <= n_txt else 15
+                ws.freeze_panes = ws.cell(2, n_txt + 1)
             return salida.getvalue()
         # El Excel se arma solo al tocar el botón (y trae todo el detalle de la selección)
-        st.download_button("Descargar en Excel (con todo el detalle)", excel_tabla,
+        st.download_button("Descargar en Excel (valores exactos en pesos, con todo el detalle)", excel_tabla,
                            file_name=f"Tabla_{vista.split()[0]}_{desde}_{hasta}.xlsx")
 
 
@@ -2343,15 +2376,44 @@ with pest[3]:
             k[i].metric(f"{ger} — {etq_sel}", millones(suma(gi, seleccion)))
             if not anual:
                 k[i].caption(f"Acumulado {etq_acum}: {millones(suma(gi, acum))}")
-        rango = [anio * 100 + m for m in range(1, 13)] if anual else [mover(mes, -k) for k in range(11, -1, -1)]
-        tg = g[g["periodo"].isin(rango)].pivot_table(index=["gerente", "ceco", "rubro"], columns="periodo",
-                                                    values="valor", aggfunc="sum", fill_value=0)
+        cg = st.columns([0.9, 2.2, 2.5], vertical_alignment="bottom")
+        col_g = cg[0].radio("Columnas", ["Mes", "Año"], horizontal=True, key="ger_columnas",
+                            help="Mes: los 12 meses del periodo elegido arriba. Año: una columna por año completo.")
+        if col_g == "Año":
+            anios_g = sorted({p_ // 100 for p_ in g["periodo"]})
+            if len(anios_g) > 1:
+                ga_desde, ga_hasta = cg[1].select_slider(
+                    "Años", options=anios_g, format_func=etq_anio, key="ger_anios",
+                    value=(anios_g[max(0, len(anios_g) - 6)], anios_g[-1]))
+            else:
+                ga_desde = ga_hasta = anios_g[0]
+            rango = [a_ for a_ in anios_g if ga_desde <= a_ <= ga_hasta]
+            gd = g.assign(periodo=g["periodo"] // 100)
+            etq_g, nom_total = etq_anio, "Total años"
+        else:
+            rango = [anio * 100 + m for m in range(1, 13)] if anual else [mover(mes, -k) for k in range(11, -1, -1)]
+            gd = g
+            etq_g, nom_total = etiqueta, "Total 12 meses"
+        tg = gd[gd["periodo"].isin(rango)].pivot_table(index=["gerente", "ceco", "rubro"], columns="periodo",
+                                                      values="valor", aggfunc="sum", fill_value=0)
         tg = tg.reindex(columns=rango, fill_value=0)
-        tg.columns = [etiqueta(p) for p in tg.columns]
-        tg["Total 12 meses"] = tg.sum(axis=1)
+        tg.columns = [etq_g(p) for p in tg.columns]
+        tg[nom_total] = tg.sum(axis=1)
+        # subtotal por gerente, para ver de un vistazo cuánto lleva cada uno
+        sub_g = tg.groupby(level="gerente").sum()
+        sub_g.index = pd.MultiIndex.from_tuples([(ger_, "TOTAL " + ger_.upper(), "") for ger_ in sub_g.index],
+                                                names=tg.index.names)
+        tg = pd.concat([tg, sub_g]).sort_index(level=0, sort_remaining=False)
+        orden_ = [(i_[0], i_[1].startswith("TOTAL ")) for i_ in tg.index]
+        tg = tg.iloc[sorted(range(len(tg)), key=lambda j_: orden_[j_])]
         tg = tg.reset_index().rename(columns={"gerente": "Gerente", "ceco": "CECO", "rubro": "Rubro"})
-        st.dataframe(tg.style.format(pesos, subset=[c for c in tg.columns if c not in ("Gerente", "CECO", "Rubro")]),
-                     hide_index=True, width="stretch")
+        estilo_g = tg.style.format(pesos, subset=[c for c in tg.columns if c not in ("Gerente", "CECO", "Rubro")])
+        estilo_g = estilo_g.apply(lambda f_: ["font-weight:700; background-color:#EEF3EE"
+                                              if str(f_["CECO"]).startswith("TOTAL ") else "" for _ in f_], axis=1)
+        st.dataframe(estilo_g, hide_index=True, width="stretch")
+        if col_g == "Año":
+            st.caption("Pesos · cada columna es el año completo; el año en curso dice hasta qué mes va. "
+                       "Las filas en verde son el total de cada gerente.")
 
 
 # ===============================================================
