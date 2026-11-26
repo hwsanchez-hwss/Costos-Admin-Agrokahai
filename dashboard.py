@@ -727,62 +727,69 @@ NIVELES = {"Mano de obra / Otros": "bloque", "Prefijo actividad (AC/KC/KV)": "pr
 
 with pest[1]:
     # Tabla mensual con el mismo formato del costo unitario: se baja CECO › Rubro › Actividad › Ubicación
-    st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.1rem'>"
-                "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Tabla mensual</span>"
-                "<span style='font-size:0.8rem;color:#6B7280'>el color marca los periodos de mayor gasto de cada fila · "
-                "pase el mouse por una cifra para ver el valor exacto en pesos</span></div>", unsafe_allow_html=True)
-    tm = df.copy()
-    tm["ubic"] = tm["ubicacion"].fillna("").astype(str).str.strip()
-    if "planta" in tm.columns:        # KAHAI no llena Ubicación: el lote está en PLANTA
-        tm["ubic"] = tm["ubic"].where(tm["ubic"] != "", tm["planta"].fillna("").astype(str).str.strip())
-    for c_ in ["ceco", "rubro", "actividad", "detalle", "tercero", "descripcion", "bloque"]:
-        if c_ in tm.columns:
-            tm[c_] = tm[c_].fillna("").astype(str).str.strip().replace("", "(sin dato)")
-    for c_ in ["rubro", "detalle", "descripcion"]:      # misma palabra con otra mayúscula = lo mismo
-        forma = tm.groupby(tm[c_].str.lower())[c_].agg(lambda x: x.value_counts().index[0])
-        tm[c_] = tm[c_].str.lower().map(forma)
-    tm["ubic"] = tm["ubic"].replace("", "(sin dato)")
-    NIV_TM = ([("Empresa", "empresa")] if vista == GRUPO else []) + \
-        [("CECO", "ceco"), ("Rubro", "rubro"), ("Detalle", "detalle"), ("Descripción", "descripcion")]
-    cols_t = st.columns([0.75] + [1] * len(NIV_TM) + [1.6])
-    col_t = cols_t[0].radio("Columnas", ["Mes", "Año"], horizontal=True, key="tm_columnas",
-                            help="Mes: una columna por mes. Año: una columna por año completo (suma de sus meses).")
-    cols_t = cols_t[1:]
-    base_t, elegidos_t = tm, []
-    for i, (nom, campo) in enumerate(NIV_TM):
-        libre = len(elegidos_t) < i
-        ops = sorted(base_t[campo].unique().tolist()) if not libre else []
-        val = cols_t[i].selectbox(nom, ["Todos"] + ops, key=f"tm_{'_'.join(elegidos_t)}_{campo}", disabled=libre,
-                                  help="Elija el nivel de arriba primero" if libre else None)
-        if val != "Todos" and not libre:
-            base_t = base_t[base_t[campo] == val]
-            elegidos_t.append(val)
-    anios_tm = sorted({p_ // 100 for p_ in periodos})
-    if col_t == "Año":
-        a_desde, a_hasta = cols_t[-1].select_slider(
-            "Años", options=anios_tm, format_func=etq_anio, key="tm_anios",
-            value=(anios_tm[max(0, len(anios_tm) - 6)], anios_tm[-1]))
-        desde = min(p_ for p_ in periodos if p_ // 100 == a_desde)
-        hasta = max(p_ for p_ in periodos if p_ // 100 == a_hasta)
-    else:
-        desde, hasta = cols_t[-1].select_slider(
-            "Meses", options=periodos, format_func=etiqueta,
-            value=((max(periodos[0], mover(mes, -11)), mes) if todos else (seleccion[0], mes) if anual
-                   else (max(periodos[0], mover(mes, -11)), mes)))
-    sig = NIV_TM[len(elegidos_t)] if len(elegidos_t) < len(NIV_TM) else ("Ubicación / Lote", "ubic")
-    ABRIR = {"Siguiente nivel": sig, "Lote / ubicación": ("Ubicación / Lote", "ubic"), "Actividad": ("Actividad", "actividad"),
-             "Tercero": ("Tercero", "tercero"), "Mano de obra / otros": ("Mano de obra / otros", "bloque")}
-    r1, r2, r3 = st.columns([2.0, 3, 1.35], vertical_alignment="center")
-    unidad = r3.segmented_control("Cifras en", ["Millones", "Miles", "Pesos"], default="Millones", key="tm_unidad",
-                                  label_visibility="collapsed",
-                                  help="Millones para la vista gerencial; Miles o Pesos para cuadrar contra la contabilidad."
-                                  ) or "Millones"
-    abrir = r2.segmented_control("Abrir por", list(ABRIR), default="Siguiente nivel", key="tm_abrir",
-                                 label_visibility="collapsed") or "Siguiente nivel"
-    ver_t, por_t = ABRIR[abrir]
-    ruta_t = " › ".join([titulo_vista] + elegidos_t)
-    r1.markdown(f'<div style="font-size:0.82rem;color:#374151">📍 <b>{ruta_t}</b> &nbsp;·&nbsp; filas por '
-                f'<b>{ver_t}</b></div>', unsafe_allow_html=True)
+    with st.container(key="tm_cab"):
+        st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.1rem'>"
+                    "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Tabla mensual</span>"
+                    "<span style='font-size:0.8rem;color:#6B7280'>el color marca los periodos de mayor gasto de cada fila · "
+                    "pase el mouse por una cifra para ver el valor exacto en pesos</span></div>", unsafe_allow_html=True)
+        st.markdown("""<style>
+          .st-key-tm_cab { gap:0.45rem !important; margin-bottom:0.35rem; }
+          .st-key-tm_cab [data-testid="stHorizontalBlock"] { row-gap:0.3rem; }
+          .st-key-tm_cab [data-testid="stWidgetLabel"] { margin-bottom:0.1rem; min-height:1.2rem; }
+          .st-key-ger_cab { gap:0.45rem !important; margin-bottom:0.35rem; }
+        </style>""", unsafe_allow_html=True)
+        tm = df.copy()
+        tm["ubic"] = tm["ubicacion"].fillna("").astype(str).str.strip()
+        if "planta" in tm.columns:        # KAHAI no llena Ubicación: el lote está en PLANTA
+            tm["ubic"] = tm["ubic"].where(tm["ubic"] != "", tm["planta"].fillna("").astype(str).str.strip())
+        for c_ in ["ceco", "rubro", "actividad", "detalle", "tercero", "descripcion", "bloque"]:
+            if c_ in tm.columns:
+                tm[c_] = tm[c_].fillna("").astype(str).str.strip().replace("", "(sin dato)")
+        for c_ in ["rubro", "detalle", "descripcion"]:      # misma palabra con otra mayúscula = lo mismo
+            forma = tm.groupby(tm[c_].str.lower())[c_].agg(lambda x: x.value_counts().index[0])
+            tm[c_] = tm[c_].str.lower().map(forma)
+        tm["ubic"] = tm["ubic"].replace("", "(sin dato)")
+        NIV_TM = ([("Empresa", "empresa")] if vista == GRUPO else []) + \
+            [("CECO", "ceco"), ("Rubro", "rubro"), ("Detalle", "detalle"), ("Descripción", "descripcion")]
+        cols_t = st.columns([0.75] + [1] * len(NIV_TM) + [1.6])
+        col_t = cols_t[0].radio("Columnas", ["Año", "Mes"], horizontal=True, key="tm_columnas",
+                                help="Año: una columna por año completo (suma de sus meses). Mes: una columna por mes.")
+        cols_t = cols_t[1:]
+        base_t, elegidos_t = tm, []
+        for i, (nom, campo) in enumerate(NIV_TM):
+            libre = len(elegidos_t) < i
+            ops = sorted(base_t[campo].unique().tolist()) if not libre else []
+            val = cols_t[i].selectbox(nom, ["Todos"] + ops, key=f"tm_{'_'.join(elegidos_t)}_{campo}", disabled=libre,
+                                      help="Elija el nivel de arriba primero" if libre else None)
+            if val != "Todos" and not libre:
+                base_t = base_t[base_t[campo] == val]
+                elegidos_t.append(val)
+        anios_tm = sorted({p_ // 100 for p_ in periodos})
+        if col_t == "Año":
+            a_desde, a_hasta = cols_t[-1].select_slider(
+                "Años", options=anios_tm, format_func=etq_anio, key="tm_anios",
+                value=(anios_tm[max(0, len(anios_tm) - 6)], anios_tm[-1]))
+            desde = min(p_ for p_ in periodos if p_ // 100 == a_desde)
+            hasta = max(p_ for p_ in periodos if p_ // 100 == a_hasta)
+        else:
+            desde, hasta = cols_t[-1].select_slider(
+                "Meses", options=periodos, format_func=etiqueta,
+                value=((max(periodos[0], mover(mes, -11)), mes) if todos else (seleccion[0], mes) if anual
+                       else (max(periodos[0], mover(mes, -11)), mes)))
+        sig = NIV_TM[len(elegidos_t)] if len(elegidos_t) < len(NIV_TM) else ("Ubicación / Lote", "ubic")
+        ABRIR = {"Siguiente nivel": sig, "Lote / ubicación": ("Ubicación / Lote", "ubic"), "Actividad": ("Actividad", "actividad"),
+                 "Tercero": ("Tercero", "tercero"), "Mano de obra / otros": ("Mano de obra / otros", "bloque")}
+        r1, r2, r3 = st.columns([2.0, 3, 1.35], vertical_alignment="center")
+        unidad = r3.segmented_control("Cifras en", ["Millones", "Miles", "Pesos"], default="Millones", key="tm_unidad",
+                                      label_visibility="collapsed",
+                                      help="Millones para la vista gerencial; Miles o Pesos para cuadrar contra la contabilidad."
+                                      ) or "Millones"
+        abrir = r2.segmented_control("Abrir por", list(ABRIR), default="Siguiente nivel", key="tm_abrir",
+                                     label_visibility="collapsed") or "Siguiente nivel"
+        ver_t, por_t = ABRIR[abrir]
+        ruta_t = " › ".join([titulo_vista] + elegidos_t)
+        r1.markdown(f'<div style="font-size:0.82rem;color:#374151">📍 <b>{ruta_t}</b> &nbsp;·&nbsp; filas por '
+                    f'<b>{ver_t}</b></div>', unsafe_allow_html=True)
 
     meses_rango = [p for p in periodos if desde <= p <= hasta]
     d_t = base_t[base_t["periodo"].isin(meses_rango)].copy()
@@ -2369,16 +2376,13 @@ with pest[3]:
         st.info("No hay gastos marcados a gerentes con estos filtros. "
                 "Hoy la marca de gerente (columna GERENTES) solo existe en el Excel de KAHAI.")
     else:
-        st.caption(f"Gastos marcados en la columna de gerentes: {', '.join(C.GERENTES)}")
-        k = st.columns(len(C.GERENTES))
-        for i, ger in enumerate(C.GERENTES):
-            gi = g[g["gerente"] == ger]
-            k[i].metric(f"{ger} — {etq_sel}", millones(suma(gi, seleccion)))
-            if not anual:
-                k[i].caption(f"Acumulado {etq_acum}: {millones(suma(gi, acum))}")
+        st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.4rem'>"
+                    "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Gerentes</span>"
+                    "<span style='font-size:0.8rem;color:#6B7280'>gastos marcados en la columna de gerentes: "
+                    f"{', '.join(C.GERENTES)}</span></div>", unsafe_allow_html=True)
         cg = st.columns([0.9, 2.2, 2.5], vertical_alignment="bottom")
-        col_g = cg[0].radio("Columnas", ["Mes", "Año"], horizontal=True, key="ger_columnas",
-                            help="Mes: los 12 meses del periodo elegido arriba. Año: una columna por año completo.")
+        col_g = cg[0].radio("Columnas", ["Año", "Mes"], horizontal=True, key="ger_columnas",
+                            help="Año: una columna por año completo. Mes: los 12 meses del periodo elegido arriba.")
         if col_g == "Año":
             anios_g = sorted({p_ // 100 for p_ in g["periodo"]})
             if len(anios_g) > 1:
@@ -2394,6 +2398,32 @@ with pest[3]:
             rango = [anio * 100 + m for m in range(1, 13)] if anual else [mover(mes, -k) for k in range(11, -1, -1)]
             gd = g
             etq_g, nom_total = etiqueta, "Total 12 meses"
+        # Las tarjetas siguen la misma selección de la tabla (años o 12 meses)
+        rng_txt = f"{etq_g(rango[0])} a {etq_g(rango[-1])}" if len(rango) > 1 else etq_g(rango[0])
+        tarjetas = ""
+        for ger in C.GERENTES:
+            gi = gd[(gd["gerente"] == ger) & gd["periodo"].isin(rango)]
+            tot_ = gi["valor"].sum()
+            ult_ = gi.loc[gi["periodo"] == rango[-1], "valor"].sum()
+            if col_g == "Año":
+                completos = [a_ for a_ in rango if etq_anio(a_) == str(a_)]     # años cerrados (sin el año en curso)
+                prom_ = gi.loc[gi["periodo"].isin(completos), "valor"].sum() / len(completos) if completos else 0
+                sub_ = (f"{etq_anio(rango[-1])}: <b>{millones(ult_)}</b>"
+                        + (f" · promedio por año cerrado: <b>{millones(prom_)}</b>" if completos else ""))
+            else:
+                sub_ = f"{etiqueta(rango[-1])}: <b>{millones(ult_)}</b>" + (
+                    "" if anual else f" · acumulado {etq_acum}: <b>{millones(suma(g[g['gerente'] == ger], acum))}</b>")
+            tarjetas += (f"<div class='gk'><div class='gk-t'>{ger} · total {rng_txt}</div>"
+                         f"<div class='gk-v'>{millones(tot_)}</div><div class='gk-ac'>{sub_}</div></div>")
+        st.markdown("""<style>
+          .gks { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:0.8rem; margin:0 0 0.9rem; }
+          .gk { border:1px solid #E5E7EB; border-left:4px solid #E8743B; border-radius:10px; padding:0.55rem 0.9rem;
+                background:#fff; }
+          .gk-t { font-size:0.74rem; color:#6B7280; font-weight:600; }
+          .gk-v { font-size:1.45rem; font-weight:800; color:#111827; line-height:1.25; }
+          .gk-ac { font-size:0.75rem; color:#6B7280; margin-top:0.1rem; }
+          .gk-ac b { color:#374151; }
+        </style>""" + f"<div class='gks'>{tarjetas}</div>", unsafe_allow_html=True)
         tg = gd[gd["periodo"].isin(rango)].pivot_table(index=["gerente", "ceco", "rubro"], columns="periodo",
                                                       values="valor", aggfunc="sum", fill_value=0)
         tg = tg.reindex(columns=rango, fill_value=0)
@@ -2410,7 +2440,7 @@ with pest[3]:
         estilo_g = tg.style.format(pesos, subset=[c for c in tg.columns if c not in ("Gerente", "CECO", "Rubro")])
         estilo_g = estilo_g.apply(lambda f_: ["font-weight:700; background-color:#EEF3EE"
                                               if str(f_["CECO"]).startswith("TOTAL ") else "" for _ in f_], axis=1)
-        st.dataframe(estilo_g, hide_index=True, width="stretch")
+        st.dataframe(estilo_g, hide_index=True, width="stretch", height=min(35 * (len(tg) + 1) + 3, 900))
         if col_g == "Año":
             st.caption("Pesos · cada columna es el año completo; el año en curso dice hasta qué mes va. "
                        "Las filas en verde son el total de cada gerente.")
