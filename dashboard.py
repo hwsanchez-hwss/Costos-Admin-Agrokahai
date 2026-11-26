@@ -1454,6 +1454,7 @@ def mostrar_cultivo_kahai():
     st.plotly_chart(fig, width="stretch")
 
 
+LOTES_REALES_KAHAI = {"CUMARAL", "RESTREPO", "PTO GAITAN"}    # VILLA/CIO es gasto general, no lote
 PRODUCTOS_KAHAI = {"hidratante", "proteina", "proteína", "blister", "jabon", "jabón", "miel", "harina", "accesorios",
                    "exfoliante", "galletas", "lipstick"}
 GENERALES_KAHAI = "kg de aceite producido (fila FILTRADO de la hoja DIVISORES)"
@@ -1580,8 +1581,29 @@ def mostrar_cu_kahai():
         bolsas = con.groupby(con["bolsa"].map(str))
         vals = {b_: (g_["valor"].sum(), valor_bolsa(g_["bolsa"].iloc[0], a)) for b_, g_ in bolsas}
         faltan = [b_ for b_, (_, d_) in vals.items() if not d_]
-        if len(faltan) == len(vals):
+        tipos_b0 = {b_[0] for b_ in con["bolsa"] if b_}
+        if len(faltan) == len(vals) and not (tipos_b0 and tipos_b0 <= {"kg_lote", "arb_lote"}):
             return np.nan, f"<span class='dv' style='color:#9A5B00'>{ic} sin dato</span>"
+        tipos_b = {b_[0] for b_ in con["bolsa"] if b_}
+        if tipos_b and tipos_b <= {"kg_lote", "arb_lote"}:
+            # Cultivo: cada lote real usa sus kg / árboles; lo que no es lote (Villavicencio, sin lote) se reparte
+            # entre los kg / árboles de TODOS los lotes del año. Así todas las filas del año usan el mismo divisor.
+            mapa = kgl if "kg_lote" in tipos_b else arb
+            lotes_c = {b_[1] for b_ in con["bolsa"] if b_}
+            reales = lotes_c & LOTES_REALES_KAHAI
+            general = bool(lotes_c - LOTES_REALES_KAHAI)
+            con_dato = {l_ for l_ in reales if mapa.get((l_, a))}
+            faltan_l = sorted(reales - con_dato)
+            d_lotes = sum(mapa[(l_, a)] for l_ in con_dato)
+            d_todos = sum(mapa.get((l_, a), 0) for l_ in LOTES_REALES_KAHAI)
+            d_ = max(d_lotes, d_todos if general else 0)
+            if not d_:
+                return np.nan, f"<span class='dv' style='color:#9A5B00'>{ic} sin dato</span>"
+            g_ = con.loc[~con["lote"].isin(faltan_l), "valor"].sum()
+            extra = " · todos los lotes" if general and d_ == d_todos and len(reales) < 2 else ""
+            falta = (f" <span style='color:#9A5B00' title='Este gasto no entra: el lote no tiene {u} ese año'>"
+                     f"· falta {', '.join(LOTES_KAHAI.get(l_, l_) for l_ in faltan_l)}</span>") if faltan_l else ""
+            return g_ / d_, f"<span class='dv'>{ic} {pesos(d_)} {u}{extra}{falta}</span>"
         if con["suma"].iloc[0] == "suma":
             g_ok = sum(g_ for g_, d_ in vals.values() if d_)
             d_ok = sum(d_ for _, d_ in vals.values() if d_)
