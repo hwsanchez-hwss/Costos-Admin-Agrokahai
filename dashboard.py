@@ -757,6 +757,19 @@ st.markdown("""<style>
   [class*="st-key-cab_"] [data-testid="stWidgetLabel"] { margin-bottom:0.05rem; min-height:1.15rem; }
   [class*="st-key-cab_"] [data-baseweb="select"] > div { min-height:2.3rem; }
   .ruta-cab { font-size:0.82rem; color:#374151; }
+  /* Rubros elegidos (varios): las fichas bajan de línea en vez de esconderse */
+  [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] {
+        flex-wrap:wrap !important; overflow:visible !important; height:auto !important; max-height:none !important;
+        mask-image:none !important; -webkit-mask-image:none !important; padding-top:3px; padding-bottom:3px; }
+  [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] > span {
+        display:contents !important; }
+  [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] > span > span { font-size:0.76rem; max-width:100%; }
+  [class*="st-key-cab_"] [data-testid="stMultiSelect"] .react-aria-ComboBox > div {
+        height:auto !important; max-height:none !important; min-height:2.3rem; display:flex !important;
+        flex-wrap:nowrap !important; align-items:center; }
+  [class*="st-key-cab_"] [data-testid="stMultiSelect"] .react-aria-ComboBox > div > button { flex:none; }
+  [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] { flex:1 1 0 !important; min-width:0 !important; }
+  [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] input { min-width:2rem !important; width:2rem !important; flex:1 1 2rem; }
   /* Botones de opciones (Abrir por, Millones/Miles/Pesos): completos, sin cortar ni desvanecer el último */
   [class*="st-key-cab_"] [data-testid="stButtonGroup"], [class*="st-key-cab_"] [data-testid="stButtonGroup"] * {
         mask-image:none !important; -webkit-mask-image:none !important; }
@@ -781,7 +794,26 @@ def control_columnas(lugar, key, solo_anio=False):
                                    help=ayuda) or "Año"
 
 
-COLS_CAB = [0.85, 1, 1, 1, 1, 1.6]       # Columnas | CECO | Rubro | Detalle | Descripción | rango
+COLS_CAB = [0.85, 1, 1, 1, 1, 1.6]
+
+
+def elegir_nivel(lugar, nom, campo, ops, key, libre, ayuda_libre="Elija el nivel de arriba primero"):
+    """Selector de un nivel del recorrido. Devuelve la lista elegida ([] = Todos).
+    Rubro admite varios (ej. armar el 'mantenimiento' con fertilización, malezas, fitosanitario…)."""
+    if campo == "rubro":
+        return lugar.multiselect(nom, ops, key=key + "_m", disabled=libre, placeholder="Todos",
+                                 help=ayuda_libre if libre else
+                                 "Puede elegir varios rubros: la tabla los muestra uno por fila y el TOTAL es el "
+                                 "costo de la selección junta (ej. todos los rubros de mantenimiento).")
+    v = lugar.selectbox(nom, ["Todos"] + ops, key=key, disabled=libre, help=ayuda_libre if libre else None)
+    return [] if v == "Todos" else [v]
+
+
+def texto_seleccion(sel):
+    return " + ".join(sel)
+
+
+AYUDA_MULTI = "Con varios rubros elegidos, la tabla se abre por rubro. Para bajar más, deje un solo rubro."       # Columnas | CECO | Rubro | Detalle | Descripción | rango
 
 
 with pest[1]:
@@ -806,14 +838,17 @@ with pest[1]:
         col_t = control_columnas(cols_t[0], "tm_col")
         cols_t = cols_t[1:]
         base_t, elegidos_t = tm, []
+        multi_t = None
         for i, (nom, campo) in enumerate(NIV_TM):
-            libre = len(elegidos_t) < i
+            libre = len(elegidos_t) < i or multi_t is not None
             ops = sorted(base_t[campo].unique().tolist()) if not libre else []
-            val = cols_t[i].selectbox(nom, ["Todos"] + ops, key=f"tm_{'_'.join(elegidos_t)}_{campo}", disabled=libre,
-                                      help="Elija el nivel de arriba primero" if libre else None)
-            if val != "Todos" and not libre:
-                base_t = base_t[base_t[campo] == val]
-                elegidos_t.append(val)
+            sel = elegir_nivel(cols_t[i], nom, campo, ops, f"tm_{'_'.join(elegidos_t)}_{campo}", libre,
+                               AYUDA_MULTI if multi_t else "Elija el nivel de arriba primero")
+            if sel and not libre:
+                base_t = base_t[base_t[campo].isin(sel)]
+                elegidos_t.append(sel[0] if len(sel) == 1 else texto_seleccion(sel))
+                if len(sel) > 1:
+                    multi_t = (nom, campo)
         anios_tm = sorted({p_ // 100 for p_ in periodos})
         if col_t == "Año":
             a_desde, a_hasta = cols_t[-1].select_slider(
@@ -826,7 +861,7 @@ with pest[1]:
                 "Meses", options=periodos, format_func=etiqueta,
                 value=((max(periodos[0], mover(mes, -11)), mes) if todos else (seleccion[0], mes) if anual
                        else (max(periodos[0], mover(mes, -11)), mes)))
-        sig = NIV_TM[len(elegidos_t)] if len(elegidos_t) < len(NIV_TM) else ("Ubicación / Lote", "ubic")
+        sig = multi_t or (NIV_TM[len(elegidos_t)] if len(elegidos_t) < len(NIV_TM) else ("Ubicación / Lote", "ubic"))
         ABRIR = {"Siguiente nivel": sig, "Lote": ("Ubicación / Lote", "ubic"), "Actividad": ("Actividad", "actividad"),
                  "Tercero": ("Tercero", "tercero"), "Mano de obra": ("Mano de obra / otros", "bloque")}
         r1, r2, r3 = st.columns([1.5, 3.0, 1.5], vertical_alignment="center")
@@ -896,7 +931,7 @@ with pest[1]:
         cab_t = ("<tr><th class='izq'>" + ver_t + f" <span class='uni'>· {'$ millones' if unidad == 'Millones' else '$ miles' if unidad == 'Miles' else 'pesos'}</span></th>" + "".join(f"<th>{etq_col(p_)}</th>" for p_ in meses_rango)
                  + "<th>Total</th><th>%</th></tr>")
         filas_t = [fila_html(n_, f_) for n_, f_ in piv.iterrows()]
-        filas_t.append(fila_html("TOTAL", total_t, " class='tot'"))
+        filas_t.append(fila_html("TOTAL selección" if multi_t else "TOTAL", total_t, " class='tot'"))
         html_t = "".join(filas_t)
         st.markdown("""<style>
           .ttm { overflow-x:auto; border:1px solid #E5E7EB; border-radius:10px; margin-top:0.3rem; }
@@ -1755,14 +1790,18 @@ def mostrar_cu_kahai(lugar_tit=None):
     cols_n = cab_k.columns(COLS_CAB, vertical_alignment="top")
     control_columnas(cols_n[0], "kcu_col", solo_anio=True)
     base, elegidos = k, []
+    multi_k = None
     for i, (nom, campo) in enumerate(NIV):
-        libre = len(elegidos) < i
+        libre = len(elegidos) < i or multi_k is not None
         ops = sorted(base[campo].replace("", np.nan).dropna().unique().tolist()) if not libre else []
-        val = cols_n[i + 1].selectbox(nom, ["Todos"] + ops, key=f"kcu_{'_'.join(elegidos)}_{campo}", disabled=libre)
-        if val != "Todos" and not libre:
-            base = base[base[campo] == val]
-            elegidos.append(val)
-    ver, por = (NIV[len(elegidos)] if len(elegidos) < len(NIV) else ("Lote", "lote"))
+        sel = elegir_nivel(cols_n[i + 1], nom, campo, ops, f"kcu_{'_'.join(elegidos)}_{campo}", libre,
+                           AYUDA_MULTI if multi_k else "Elija el nivel de arriba primero")
+        if sel and not libre:
+            base = base[base[campo].isin(sel)]
+            elegidos.append(sel[0] if len(sel) == 1 else texto_seleccion(sel))
+            if len(sel) > 1:
+                multi_k = (nom, campo)
+    ver, por = multi_k or (NIV[len(elegidos)] if len(elegidos) < len(NIV) else ("Lote", "lote"))
     r1, r2 = cab_k.columns([4, 1.2], vertical_alignment="center")
     r1.markdown(f'<div class="ruta-cab">📍 <b>{" › ".join(["KAHAI"] + elegidos)}'
                 f'</b> &nbsp;·&nbsp; filas por <b>{ver}</b></div>', unsafe_allow_html=True)
@@ -1819,7 +1858,7 @@ def mostrar_cu_kahai(lugar_tit=None):
                      + "<td>" + f"{filas_k[f_] / total_g:.1%}".replace(".", ",") + "</td>"
                      + (badge(vs.get(f_)) if con_vs else "")
                      + "".join(td(*celdas.get((f_, a_), (np.nan, ""))) for a_ in anios_t) + "</tr>")
-    filas.append(f"<tr class='tot'><td class='izq'>TOTAL</td><td>{millones(total_g)}</td><td>100,0%</td>"
+    filas.append(f"<tr class='tot'><td class='izq'>{'TOTAL selección' if multi_k else 'TOTAL'}</td><td>{millones(total_g)}</td><td>100,0%</td>"
                  + ("<td></td>" if con_vs else "") + "".join(td(*tot.get(a_, (np.nan, ""))) for a_ in anios_t) + "</tr>")
     st.markdown("""<style>
       .tck { overflow-x:auto; border:1px solid #E5E7EB; border-radius:10px; }
@@ -1901,18 +1940,22 @@ with pest[2]:
             eje = control_columnas(cols_n[0], "cu_col")
             base = cu
             elegidos_n, clave = [], "cu"
+            multi_cu = None
             for i, (nombre_n, campo_n) in enumerate(NIVELES):
                 opciones_n = list(base.groupby(campo_n)["valor"].sum().sort_values(ascending=False).index)
                 clave += "_" + (elegidos_n[-1] if elegidos_n else "x")   # al cambiar el nivel de arriba, se reinicia
-                anterior_libre = len(elegidos_n) < i
-                valor_n = cols_n[i + 1].selectbox(nombre_n, [TODOS] + opciones_n, key=f"{clave}_{campo_n}",
-                                                  disabled=anterior_libre,
-                                                  help="Elija el nivel de arriba primero" if anterior_libre else None)
-                if valor_n != TODOS and not anterior_libre:
-                    base = base[base[campo_n] == valor_n]
-                    elegidos_n.append(valor_n)
-            # El nivel que se muestra en filas: el siguiente al último elegido
-            if len(elegidos_n) < len(NIVELES):
+                anterior_libre = len(elegidos_n) < i or multi_cu is not None
+                sel_n = elegir_nivel(cols_n[i + 1], nombre_n, campo_n, opciones_n, f"{clave}_{campo_n}", anterior_libre,
+                                     AYUDA_MULTI if multi_cu else "Elija el nivel de arriba primero")
+                if sel_n and not anterior_libre:
+                    base = base[base[campo_n].isin(sel_n)]
+                    elegidos_n.append(sel_n[0] if len(sel_n) == 1 else texto_seleccion(sel_n))
+                    if len(sel_n) > 1:
+                        multi_cu = (nombre_n, campo_n)
+            # El nivel que se muestra en filas: el siguiente al último elegido (o el rubro, si se eligieron varios)
+            if multi_cu:
+                ver, por = multi_cu
+            elif len(elegidos_n) < len(NIVELES):
                 ver, por = NIVELES[len(elegidos_n)]
             else:
                 ver, por = "Ubicación", "ubicacion"
@@ -2198,7 +2241,8 @@ with pest[2]:
                     for _, r in t.iterrows():
                         clase = (' class="tot"' if r[nombre_c] == "TOTAL" else
                                  ' class="prom"' if r[nombre_c] == "PROMEDIO LOTES" else "")
-                        nombre_f = "TOTAL ponderado" if (r[nombre_c] == "TOTAL" and hay_directo) else str(r[nombre_c])
+                        nombre_f = ("TOTAL ponderado" if (r[nombre_c] == "TOTAL" and hay_directo) else
+                                    "TOTAL selección" if (r[nombre_c] == "TOTAL" and multi_cu) else str(r[nombre_c]))
                         pct_txt = f"{r['% del gasto']:.1%}".replace(".", ",")
                         filas_h.append(f"<tr{clase}><td class='izq'>{_html.escape(nombre_f)}</td>"
                                        f"<td>{millones(r['Gasto total'])}</td><td>{pct_txt}</td>"
