@@ -91,10 +91,11 @@ st.markdown(f"""
 
   /* ===== Panel de filtros: una sola tarjeta ejecutiva ===== */
   .st-key-barra_filtros {{ position:relative; overflow:hidden; margin-top:0.7rem; background:#FFFFFF;
-        border:1px solid #E3E8E2; border-radius:16px; padding:0.75rem 1.2rem 0.6rem 1.2rem;
+        border:1px solid #E3E8E2; border-radius:16px; padding:0.55rem 1.1rem 0.45rem 1.1rem;
         box-shadow:0 1px 2px rgba(16,24,40,0.04), 0 10px 28px -14px rgba(16,24,40,0.18); gap:0.25rem; }}
   .st-key-barra_filtros [data-testid="stHorizontalBlock"] {{ gap:0.6rem; }}
-  .st-key-barra_filtros [data-testid="stVerticalBlock"] {{ gap:0.25rem; }}
+  .st-key-barra_filtros [data-testid="stVerticalBlock"] {{ gap:0.3rem; }}
+  .st-key-barra_filtros {{ margin-bottom:-0.5rem; }}
   .st-key-barra_filtros [data-testid="stElementContainer"] {{ margin:0; }}
   .st-key-barra_filtros::before {{ content:""; position:absolute; left:0; right:0; top:0; height:3px;
         background:linear-gradient(90deg, {VERDE} 0%, #43A047 55%, var(--acento) 100%); }}
@@ -117,7 +118,7 @@ st.markdown(f"""
         text-transform:uppercase; color:#7A867C !important; }}
   /* Botones: fichas suaves; la elegida, sólida y con sombra */
   .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button {{ border-radius:9px !important; border:1px solid #E3E8E2 !important;
-        background:#F7F9F7 !important; min-height:1.8rem; padding:0.05rem 0.8rem !important;
+        background:#F7F9F7 !important; min-height:1.6rem; padding:0 0.75rem !important;
         transition:background .15s, border-color .15s, box-shadow .15s, transform .15s; }}
   .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button p {{ color:#344054 !important; font-weight:500; font-size:0.86rem; }}
   .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button:hover {{ background:#FFFFFF !important;
@@ -134,8 +135,8 @@ st.markdown(f"""
   /* Empresa: fichas grandes con el punto de color de cada empresa; Grupo ocupa el alto completo */
   .st-key-f_empresa [role="radiogroup"] {{ display:grid !important; grid-template-columns:repeat(3, max-content);
         gap:6px; overflow:visible !important; width:fit-content; }}
-  .st-key-f_empresa [role="radiogroup"] > button {{ border-radius:10px !important; width:100%; min-width:0; min-height:1.85rem;
-        padding:0.1rem 0.8rem !important;
+  .st-key-f_empresa [role="radiogroup"] > button {{ border-radius:10px !important; width:100%; min-width:0; min-height:0; height:1.8rem;
+        padding:0 0.8rem !important;
         border:1px solid #E3E8E2 !important; margin:0 !important; background:#F7F9F7 !important; justify-content:flex-start; }}
   .st-key-f_empresa [role="radiogroup"] > button p {{ font-weight:600; letter-spacing:0.3px; color:#344054 !important; }}
   .st-key-f_empresa [role="radiogroup"] > button::before {{ content:""; width:9px; height:9px; border-radius:50%;
@@ -152,9 +153,21 @@ st.markdown(f"""
   .st-key-barra_filtros .st-key-f_empresa [role="radiogroup"] > button:is([data-selected="true"],[aria-checked="true"],[kind$="Active"]) p {{ color:#fff !important; }}
 
   /* Año y mes: cada uno en un "riel" gris claro; la ficha elegida resalta encima */
+  /* Año y mes con su título a la izquierda (no encima) para ahorrar alto */
+  .st-key-f_anio [data-testid="stButtonGroup"], [class*="st-key-f_mes"] [data-testid="stButtonGroup"] {{
+        display:flex !important; flex-direction:row !important; align-items:center; gap:0.5rem; }}
+  .st-key-f_anio [data-testid="stWidgetLabel"], [class*="st-key-f_mes"] [data-testid="stWidgetLabel"] {{
+        flex:none; width:2.3rem; margin:0 !important; }}
+  .st-key-barra_filtros [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button {{
+        height:1.75rem; min-height:0 !important; }}
+  .st-key-barra_filtros .st-key-f_anio [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button,
+  .st-key-barra_filtros [class*="st-key-f_mes"] [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button {{
+        padding:0 0.6rem !important; }}
+  .st-key-f_anio [data-testid="stButtonGroup"] > div, [class*="st-key-f_mes"] [data-testid="stButtonGroup"] > div {{
+        flex:0 1 auto; min-width:0; }}
   .st-key-f_anio [role="toolbar"], .st-key-f_anio [role="radiogroup"],
   [class*="st-key-f_mes"] [role="toolbar"], [class*="st-key-f_mes"] [role="radiogroup"] {{
-        background:#F1F4F0; border-radius:11px; padding:3px; gap:3px !important; overflow:visible !important; }}
+        background:#F1F4F0; border-radius:10px; padding:2px; gap:3px !important; overflow:visible !important; }}
   .st-key-f_anio [role="toolbar"], .st-key-f_anio [role="radiogroup"] {{ display:flex !important; flex-wrap:wrap;
         width:fit-content; }}
   [class*="st-key-f_mes"] [role="toolbar"], [class*="st-key-f_mes"] [role="radiogroup"] {{ display:flex !important;
