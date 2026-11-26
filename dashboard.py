@@ -227,6 +227,8 @@ st.markdown(f"""
   [data-testid="stTab"][aria-selected="true"] {{ background:{VERDE} !important; box-shadow:0 4px 10px -3px rgba(27,94,32,0.55); }}
   [data-testid="stTab"][aria-selected="true"] p {{ color:#FFFFFF !important; }}
   [data-testid="stTab"] .react-aria-SelectionIndicator {{ display:none !important; }}
+  @media (max-width: 1250px) {{ [data-testid="stTab"] {{ padding:0.38rem 0.7rem !important; }}
+                                [data-testid="stTab"] p {{ font-size:0.88rem !important; }} }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -755,6 +757,13 @@ st.markdown("""<style>
   [class*="st-key-cab_"] [data-testid="stWidgetLabel"] { margin-bottom:0.05rem; min-height:1.15rem; }
   [class*="st-key-cab_"] [data-baseweb="select"] > div { min-height:2.3rem; }
   .ruta-cab { font-size:0.82rem; color:#374151; }
+  /* Botones de opciones (Abrir por, Millones/Miles/Pesos): completos, sin cortar ni desvanecer el último */
+  [class*="st-key-cab_"] [data-testid="stButtonGroup"], [class*="st-key-cab_"] [data-testid="stButtonGroup"] * {
+        mask-image:none !important; -webkit-mask-image:none !important; }
+  [class*="st-key-cab_"] [data-testid="stButtonGroup"] [role="toolbar"], [class*="st-key-cab_"] [data-testid="stButtonGroup"] [role="radiogroup"] {
+        flex-wrap:wrap; overflow:visible !important; }
+  [class*="st-key-cab_"] [data-testid="stButtonGroup"] :is([role="toolbar"],[role="radiogroup"]) > button {
+        white-space:nowrap; padding-left:0.85rem; padding-right:0.85rem; }
 </style>""", unsafe_allow_html=True)
 
 
@@ -818,15 +827,17 @@ with pest[1]:
                 value=((max(periodos[0], mover(mes, -11)), mes) if todos else (seleccion[0], mes) if anual
                        else (max(periodos[0], mover(mes, -11)), mes)))
         sig = NIV_TM[len(elegidos_t)] if len(elegidos_t) < len(NIV_TM) else ("Ubicación / Lote", "ubic")
-        ABRIR = {"Siguiente nivel": sig, "Lote / ubicación": ("Ubicación / Lote", "ubic"), "Actividad": ("Actividad", "actividad"),
-                 "Tercero": ("Tercero", "tercero"), "Mano de obra / otros": ("Mano de obra / otros", "bloque")}
-        r1, r2, r3 = st.columns([2.0, 3, 1.35], vertical_alignment="center")
+        ABRIR = {"Siguiente nivel": sig, "Lote": ("Ubicación / Lote", "ubic"), "Actividad": ("Actividad", "actividad"),
+                 "Tercero": ("Tercero", "tercero"), "Mano de obra": ("Mano de obra / otros", "bloque")}
+        r1, r2, r3 = st.columns([1.5, 3.0, 1.5], vertical_alignment="center")
         unidad = r3.segmented_control("Cifras en", ["Millones", "Miles", "Pesos"], default="Millones", key="tm_unidad",
                                       label_visibility="collapsed",
                                       help="Millones para la vista gerencial; Miles o Pesos para cuadrar contra la contabilidad."
                                       ) or "Millones"
-        abrir = r2.segmented_control("Abrir por", list(ABRIR), default="Siguiente nivel", key="tm_abrir",
-                                     label_visibility="collapsed") or "Siguiente nivel"
+        abrir = r2.segmented_control("Abrir por", list(ABRIR), default="Siguiente nivel", key="tm_abrir2",
+                                     label_visibility="collapsed",
+                                     help="Cómo abrir las filas: el siguiente nivel (CECO › Rubro › Detalle › Descripción), "
+                                          "por lote, actividad, tercero, o mano de obra contra otros costos.") or "Siguiente nivel"
         ver_t, por_t = ABRIR[abrir]
         ruta_t = " › ".join([titulo_vista] + elegidos_t)
         r1.markdown(f'<div class="ruta-cab">📍 <b>{ruta_t}</b> &nbsp;·&nbsp; filas por '
