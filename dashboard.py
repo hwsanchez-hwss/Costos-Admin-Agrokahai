@@ -738,9 +738,12 @@ with pest[1]:
     for c_ in ["ceco", "rubro", "actividad", "detalle", "tercero", "descripcion", "bloque"]:
         if c_ in tm.columns:
             tm[c_] = tm[c_].fillna("").astype(str).str.strip().replace("", "(sin dato)")
+    for c_ in ["rubro", "detalle", "descripcion"]:      # misma palabra con otra mayúscula = lo mismo
+        forma = tm.groupby(tm[c_].str.lower())[c_].agg(lambda x: x.value_counts().index[0])
+        tm[c_] = tm[c_].str.lower().map(forma)
     tm["ubic"] = tm["ubic"].replace("", "(sin dato)")
     NIV_TM = ([("Empresa", "empresa")] if vista == GRUPO else []) + \
-        [("CECO", "ceco"), ("Rubro", "rubro"), ("Actividad", "actividad"), ("Ubicación / Lote", "ubic")]
+        [("CECO", "ceco"), ("Rubro", "rubro"), ("Detalle", "detalle"), ("Descripción", "descripcion")]
     cols_t = st.columns([1] * len(NIV_TM) + [1.6])
     base_t, elegidos_t = tm, []
     for i, (nom, campo) in enumerate(NIV_TM):
@@ -755,8 +758,8 @@ with pest[1]:
         "Meses", options=periodos, format_func=etiqueta,
         value=((max(periodos[0], mover(mes, -11)), mes) if todos else (seleccion[0], mes) if anual
                else (max(periodos[0], mover(mes, -11)), mes)))
-    sig = NIV_TM[len(elegidos_t)] if len(elegidos_t) < len(NIV_TM) else ("Descripción", "descripcion")
-    ABRIR = {"Siguiente nivel": sig, "Lote / ubicación": ("Ubicación / Lote", "ubic"), "Detalle": ("Detalle", "detalle"),
+    sig = NIV_TM[len(elegidos_t)] if len(elegidos_t) < len(NIV_TM) else ("Ubicación / Lote", "ubic")
+    ABRIR = {"Siguiente nivel": sig, "Lote / ubicación": ("Ubicación / Lote", "ubic"), "Actividad": ("Actividad", "actividad"),
              "Tercero": ("Tercero", "tercero"), "Mano de obra / otros": ("Mano de obra / otros", "bloque")}
     r1, r2 = st.columns([2.2, 3], vertical_alignment="center")
     abrir = r2.segmented_control("Abrir por", list(ABRIR), default="Siguiente nivel", key="tm_abrir",
@@ -822,15 +825,16 @@ with pest[1]:
             st.toggle(f"Ver todas las filas ({n_filas})", key="tm_todas",
                       help="Por defecto se muestran las 15 de mayor gasto y el resto se junta en 'Otras'.")
         st.caption(f"Millones de pesos · {etiqueta(meses_rango[0])} a {etiqueta(meses_rango[-1])} · % = parte del total "
-                   "del periodo. Con 'Abrir por' se ve la misma selección por lote, detalle, tercero o mano de obra.")
+                   "del periodo. Con 'Abrir por' se ve la misma selección por lote, actividad, tercero o mano de obra.")
 
         def excel_tabla(d=d_t):
-            campos_x = [c_ for _, c_ in NIV_TM] + ["detalle", "descripcion"]
+            campos_x = [c_ for _, c_ in NIV_TM] + ["ubic", "actividad"]
             px = d.pivot_table(index=campos_x, columns="periodo", values="valor", aggfunc="sum", fill_value=0)
             px.columns = [etiqueta(c_) for c_ in px.columns]
             px["Total"] = px.sum(axis=1)
             salida = io.BytesIO()
-            px.reset_index().rename(columns={c_: n_ for n_, c_ in NIV_TM}).to_excel(salida, index=False,
+            px.reset_index().rename(columns={**{c_: n_ for n_, c_ in NIV_TM}, "ubic": "Ubicación / Lote",
+                                             "actividad": "Actividad"}).to_excel(salida, index=False,
                                                                                    sheet_name="Tabla mensual")
             return salida.getvalue()
         # El Excel se arma solo al tocar el botón (y trae todo el detalle de la selección)
