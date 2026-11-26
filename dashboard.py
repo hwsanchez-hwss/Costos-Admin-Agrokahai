@@ -744,7 +744,10 @@ with pest[1]:
     tm["ubic"] = tm["ubic"].replace("", "(sin dato)")
     NIV_TM = ([("Empresa", "empresa")] if vista == GRUPO else []) + \
         [("CECO", "ceco"), ("Rubro", "rubro"), ("Detalle", "detalle"), ("Descripción", "descripcion")]
-    cols_t = st.columns([1] * len(NIV_TM) + [1.6])
+    cols_t = st.columns([0.75] + [1] * len(NIV_TM) + [1.6])
+    col_t = cols_t[0].radio("Columnas", ["Mes", "Año"], horizontal=True, key="tm_columnas",
+                            help="Mes: una columna por mes. Año: una columna por año completo (suma de sus meses).")
+    cols_t = cols_t[1:]
     base_t, elegidos_t = tm, []
     for i, (nom, campo) in enumerate(NIV_TM):
         libre = len(elegidos_t) < i
@@ -754,10 +757,18 @@ with pest[1]:
         if val != "Todos" and not libre:
             base_t = base_t[base_t[campo] == val]
             elegidos_t.append(val)
-    desde, hasta = cols_t[-1].select_slider(
-        "Meses", options=periodos, format_func=etiqueta,
-        value=((max(periodos[0], mover(mes, -11)), mes) if todos else (seleccion[0], mes) if anual
-               else (max(periodos[0], mover(mes, -11)), mes)))
+    anios_tm = sorted({p_ // 100 for p_ in periodos})
+    if col_t == "Año":
+        a_desde, a_hasta = cols_t[-1].select_slider(
+            "Años", options=anios_tm, format_func=etq_anio, key="tm_anios",
+            value=(anios_tm[max(0, len(anios_tm) - 6)], anios_tm[-1]))
+        desde = min(p_ for p_ in periodos if p_ // 100 == a_desde)
+        hasta = max(p_ for p_ in periodos if p_ // 100 == a_hasta)
+    else:
+        desde, hasta = cols_t[-1].select_slider(
+            "Meses", options=periodos, format_func=etiqueta,
+            value=((max(periodos[0], mover(mes, -11)), mes) if todos else (seleccion[0], mes) if anual
+                   else (max(periodos[0], mover(mes, -11)), mes)))
     sig = NIV_TM[len(elegidos_t)] if len(elegidos_t) < len(NIV_TM) else ("Ubicación / Lote", "ubic")
     ABRIR = {"Siguiente nivel": sig, "Lote / ubicación": ("Ubicación / Lote", "ubic"), "Actividad": ("Actividad", "actividad"),
              "Tercero": ("Tercero", "tercero"), "Mano de obra / otros": ("Mano de obra / otros", "bloque")}
@@ -770,7 +781,11 @@ with pest[1]:
                 f'<b>{ver_t}</b></div>', unsafe_allow_html=True)
 
     meses_rango = [p for p in periodos if desde <= p <= hasta]
-    d_t = base_t[base_t["periodo"].isin(meses_rango)]
+    d_t = base_t[base_t["periodo"].isin(meses_rango)].copy()
+    if col_t == "Año":     # columnas = años: se agrupa por año y se rotula con su tramo real (ej. 2026 (Ene–Oct))
+        d_t["periodo"] = d_t["periodo"] // 100
+        meses_rango = sorted({p_ // 100 for p_ in meses_rango})
+    etq_col = etq_anio if col_t == "Año" else etiqueta
     if d_t.empty:
         st.info("Sin gasto con estos filtros.")
     else:
@@ -802,7 +817,7 @@ with pest[1]:
             return (f"<tr{clase}><td class='izq'>{__import__('html').escape(str(nombre))}</td>{celdas}"
                     f"<td class='tt'>{m_(fila['Total'])}</td><td class='pc'>{pct_txt}</td></tr>")
 
-        cab_t = ("<tr><th class='izq'>" + ver_t + "</th>" + "".join(f"<th>{etiqueta(p_)}</th>" for p_ in meses_rango)
+        cab_t = ("<tr><th class='izq'>" + ver_t + "</th>" + "".join(f"<th>{etq_col(p_)}</th>" for p_ in meses_rango)
                  + "<th>Total</th><th>%</th></tr>")
         filas_t = [fila_html(n_, f_) for n_, f_ in piv.iterrows()]
         filas_t.append(fila_html("TOTAL", total_t, " class='tot'"))
@@ -824,13 +839,13 @@ with pest[1]:
         if n_filas > n_max + 1:
             st.toggle(f"Ver todas las filas ({n_filas})", key="tm_todas",
                       help="Por defecto se muestran las 15 de mayor gasto y el resto se junta en 'Otras'.")
-        st.caption(f"Millones de pesos · {etiqueta(meses_rango[0])} a {etiqueta(meses_rango[-1])} · % = parte del total "
+        st.caption(f"Millones de pesos · {etq_col(meses_rango[0])} a {etq_col(meses_rango[-1])} · % = parte del total "
                    "del periodo. Con 'Abrir por' se ve la misma selección por lote, actividad, tercero o mano de obra.")
 
         def excel_tabla(d=d_t):
             campos_x = [c_ for _, c_ in NIV_TM] + ["ubic", "actividad"]
             px = d.pivot_table(index=campos_x, columns="periodo", values="valor", aggfunc="sum", fill_value=0)
-            px.columns = [etiqueta(c_) for c_ in px.columns]
+            px.columns = [etq_col(c_) for c_ in px.columns]
             px["Total"] = px.sum(axis=1)
             salida = io.BytesIO()
             px.reset_index().rename(columns={**{c_: n_ for n_, c_ in NIV_TM}, "ubic": "Ubicación / Lote",
