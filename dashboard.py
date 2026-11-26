@@ -1258,13 +1258,21 @@ def mostrar_cultivo_kahai():
     k["es_mo"] = k["bloque"].isin(["Mano de obra (nómina)", "Mano de obra al contrato"])
 
     div = F.leer_tabla("kahai_cultivo_lotes")
-    arb, kgl = {}, {}
+    arb, kgl, bloques_txt = {}, {}, {}
     if not div.empty:
         div["lote"] = div["lote"].astype(str).str.strip().str.upper()
-        arb = {(l, int(a)): v for l, a, v in zip(div["lote"], div["anio"], pd.to_numeric(div["arboles"], errors="coerce"))
-               if pd.notna(v) and v > 0}
-        kgl = {(l, int(a)): v for l, a, v in zip(div["lote"], div["anio"], pd.to_numeric(div["kg"], errors="coerce"))
-               if pd.notna(v) and v > 0}
+        div["bloque"] = div["bloque"].fillna("").astype(str) if "bloque" in div.columns else ""
+        for c_ in ["arboles", "kg"]:
+            div[c_] = pd.to_numeric(div[c_], errors="coerce")
+        # Cumaral = bloques HM + MME: se suman, porque el gasto de cosecha no dice el bloque
+        sumas = div.groupby(["lote", "anio"])[["arboles", "kg"]].sum(min_count=1)
+        arb = {(l, int(a)): v for (l, a), v in sumas["arboles"].items() if pd.notna(v) and v > 0}
+        kgl = {(l, int(a)): v for (l, a), v in sumas["kg"].items() if pd.notna(v) and v > 0}
+        for (l, a), g_ in div[div["bloque"] != ""].groupby(["lote", "anio"]):
+            partes = [f"{b_}: {pesos(r_)} árb · {pesos(k_)} kg" for b_, r_, k_ in zip(g_["bloque"], g_["arboles"].fillna(0),
+                                                                                    g_["kg"].fillna(0)) if r_ or k_]
+            if len(partes) > 1:
+                bloques_txt[(l, int(a))] = " + ".join(partes)
 
     def por_kg(rubro):
         return str(rubro).lower().startswith(("cosecha", "fruto verde"))
@@ -1316,12 +1324,15 @@ def mostrar_cultivo_kahai():
             return "<td>—</td>"
         det = ""
         if lote is not None and lote in LOTES_KAHAI:
+            tip = _h.escape(bloques_txt.get((lote, a), ""))
             if rubro is not None and por_kg(rubro):
                 d = kgl.get((lote, a))
-                det = f"<div class='det'>${pesos(v / d)}/kg</div>" if d else ""
+                det = (f"<div class='det' title='{tip}'>${pesos(v / d)}/kg · {pesos(d)} kg</div>" if d else
+                       "<div class='det' style='color:#9A5B00'>sin kg</div>")
             else:
                 d = arb.get((lote, a))
-                det = f"<div class='det'>${pesos(v / d)}/árbol</div>" if d else ""
+                det = (f"<div class='det' title='{tip}'>${pesos(v / d)}/árbol · {pesos(d)} árb</div>" if d else
+                       "<div class='det' style='color:#9A5B00'>sin árboles</div>")
         return f"<td>{millones(v)}{det}</td>"
 
     def tabla(filas_def, titulo_col):
@@ -1366,8 +1377,9 @@ def mostrar_cultivo_kahai():
     st.caption(f"Pesos en millones. Var. = {a_ref}{hasta} contra los mismos meses de {a_ref - 1} (rojo = subió el gasto). "
                "El lote sale de la columna PLANTA del consolidado; los rubros _HM (Cumaral) y _MPB (Restrepo) se juntan "
                "con su rubro base para poder comparar lotes."
-               + (" Para ver $/árbol y $/kg, llene la hoja CULTIVO_LOTES de Graficas\\PRODUCCION_KAHAI.xlsx "
-                  "(árboles y kg cosechados por lote y año) y corra:  python motor_procesamiento_kahai.py" if (sin_div or todos_l) and not arb else ""))
+               + (" ⚠️ Para ver $/árbol y $/kg, llene la hoja CULTIVO_LOTES de Graficas\\PRODUCCION_KAHAI.xlsx "
+                  "(árboles y kg por bloque: Cumaral HM y MME, Restrepo MPB) y corra:  python motor_procesamiento_kahai.py"
+                  if not arb and not kgl else " Cumaral suma sus bloques HM y MME (pase el mouse sobre el valor para ver cada bloque)."))
 
     # ---- Gráfica: gasto por año, apilado por lote (o por rubro si se eligió un lote)
     por_g = "lote" if todos_l else "rubro_b"

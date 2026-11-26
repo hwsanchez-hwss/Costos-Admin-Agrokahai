@@ -61,20 +61,25 @@ COLS_LOTES = {"AÑO": "anio", "LOTE ACEITE": "lote", "NUEZ TESTA (kg)": "nuez_te
 
 
 def leer_cultivo_lotes(ruta=None):
-    """Hoja CULTIVO_LOTES: árboles y kg cosechados de cada lote de cultivo de KAHAI por año (divisores de la
-    vista 'Cultivo por lote'). Celdas vacías = sin dato (la app muestra solo el gasto)."""
+    """Hoja CULTIVO_LOTES: árboles y kg cosechados de cada BLOQUE de los lotes de cultivo de KAHAI por año
+    (Cumaral = bloques HM y MME; Restrepo = MPB). La app suma los bloques de cada lote. Vacío = sin dato."""
     ruta = ruta or C.ARCHIVO_PRODUCCION_KAHAI
     temporal = os.path.join(tempfile.gettempdir(), "lectura_cultivo_kahai.xlsx")
     shutil.copy2(ruta, temporal)
     try:
-        h = pd.read_excel(temporal, sheet_name="CULTIVO_LOTES", usecols="A:D")
+        h = pd.read_excel(temporal, sheet_name="CULTIVO_LOTES")
     except ValueError:
-        return pd.DataFrame(columns=["lote", "anio", "arboles", "kg"])
+        return pd.DataFrame(columns=["lote", "bloque", "anio", "arboles", "kg"])
     finally:
         os.remove(temporal)
-    h.columns = ["lote", "anio", "arboles", "kg"]
+    h.columns = [str(c).strip().upper() for c in h.columns]
+    if "BLOQUE" not in h.columns:           # hoja vieja sin la columna BLOQUE
+        h.insert(1, "BLOQUE", None)
+    h = h[["LOTE", "BLOQUE", "AÑO", "ÁRBOLES", "KG COSECHADOS"]]
+    h.columns = ["lote", "bloque", "anio", "arboles", "kg"]
     h = h[h["lote"].notna() & pd.to_numeric(h["anio"], errors="coerce").notna()].copy()
     h["lote"] = h["lote"].astype(str).str.strip().str.upper()
+    h["bloque"] = h["bloque"].fillna("").astype(str).str.strip().str.upper()
     h["anio"] = pd.to_numeric(h["anio"]).astype(int)
     for c in ["arboles", "kg"]:
         h[c] = pd.to_numeric(h[c], errors="coerce")
