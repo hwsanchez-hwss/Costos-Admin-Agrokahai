@@ -2376,18 +2376,21 @@ with pest[3]:
         st.info("No hay gastos marcados a gerentes con estos filtros. "
                 "Hoy la marca de gerente (columna GERENTES) solo existe en el Excel de KAHAI.")
     else:
-        st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.4rem'>"
-                    "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Gerentes</span>"
-                    "<span style='font-size:0.8rem;color:#6B7280'>gastos marcados en la columna de gerentes: "
-                    f"{', '.join(C.GERENTES)}</span></div>", unsafe_allow_html=True)
-        cg = st.columns([0.9, 2.2, 2.5], vertical_alignment="bottom")
-        col_g = cg[0].radio("Columnas", ["Año", "Mes"], horizontal=True, key="ger_columnas",
-                            help="Año: una columna por año completo. Mes: los 12 meses del periodo elegido arriba.")
+        # Una sola franja: título a la izquierda, Año|Mes y el rango de años a la derecha
+        cg = st.columns([2.1, 0.85, 2.6], vertical_alignment="center", gap="small")
+        cg[0].markdown("<div style='line-height:1.15;margin:0.1rem 0'>"
+                       "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Gerentes</span><br>"
+                       "<span style='font-size:0.76rem;color:#6B7280'>gastos marcados a: "
+                       f"{', '.join(C.GERENTES)}</span></div>", unsafe_allow_html=True)
+        col_g = cg[1].segmented_control("Columnas", ["Año", "Mes"], default="Año", key="ger_col",
+                                        label_visibility="collapsed",
+                                        help="Año: una columna por año completo. Mes: los 12 meses del periodo elegido "
+                                             "arriba.") or "Año"
         if col_g == "Año":
             anios_g = sorted({p_ // 100 for p_ in g["periodo"]})
             if len(anios_g) > 1:
-                ga_desde, ga_hasta = cg[1].select_slider(
-                    "Años", options=anios_g, format_func=etq_anio, key="ger_anios",
+                ga_desde, ga_hasta = cg[2].select_slider(
+                    "Años", options=anios_g, format_func=etq_anio, key="ger_anios", label_visibility="collapsed",
                     value=(anios_g[max(0, len(anios_g) - 6)], anios_g[-1]))
             else:
                 ga_desde = ga_hasta = anios_g[0]
@@ -2416,12 +2419,12 @@ with pest[3]:
             tarjetas += (f"<div class='gk'><div class='gk-t'>{ger} · total {rng_txt}</div>"
                          f"<div class='gk-v'>{millones(tot_)}</div><div class='gk-ac'>{sub_}</div></div>")
         st.markdown("""<style>
-          .gks { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:0.8rem; margin:0 0 0.9rem; }
-          .gk { border:1px solid #E5E7EB; border-left:4px solid #E8743B; border-radius:10px; padding:0.55rem 0.9rem;
+          .gks { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:0.7rem; margin:0.05rem 0 0.5rem; }
+          .gk { border:1px solid #E5E7EB; border-left:4px solid #E8743B; border-radius:10px; padding:0.4rem 0.85rem;
                 background:#fff; }
-          .gk-t { font-size:0.74rem; color:#6B7280; font-weight:600; }
-          .gk-v { font-size:1.45rem; font-weight:800; color:#111827; line-height:1.25; }
-          .gk-ac { font-size:0.75rem; color:#6B7280; margin-top:0.1rem; }
+          .gk-t { font-size:0.72rem; color:#6B7280; font-weight:600; }
+          .gk-v { font-size:1.3rem; font-weight:800; color:#111827; line-height:1.2; }
+          .gk-ac { font-size:0.73rem; color:#6B7280; margin-top:0.05rem; }
           .gk-ac b { color:#374151; }
         </style>""" + f"<div class='gks'>{tarjetas}</div>", unsafe_allow_html=True)
         tg = gd[gd["periodo"].isin(rango)].pivot_table(index=["gerente", "ceco", "rubro"], columns="periodo",
