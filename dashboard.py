@@ -726,62 +726,115 @@ NIVELES = {"Mano de obra / Otros": "bloque", "Prefijo actividad (AC/KC/KV)": "pr
            "Actividad / Notas": "actividad", "Tercero": "tercero", "Descripción": "descripcion"}
 
 with pest[1]:
-    c1, c2 = st.columns([2, 3])
-    niveles = c1.multiselect("Niveles (en orden)", list(NIVELES), default=["CECO", "Rubro", "Detalle"],
-                             help="Se agrupa en el orden en que se eligen. Actividad y Tercero "
-                                  "tienen miles de valores: úselos con pocos meses o filtrando.")
-    desde, hasta = c2.select_slider("Meses", options=periodos, format_func=etiqueta,
-                                    value=((acum[0], mes) if todos else (seleccion[0], mes) if anual
-                                           else (max(periodos[0], mover(mes, -11)), mes)))
-    if not niveles:
-        st.info("Elija al menos un nivel.")
+    # Tabla mensual con el mismo formato del costo unitario: se baja CECO › Rubro › Actividad › Ubicación
+    st.markdown("<div style='display:flex;align-items:baseline;gap:0.8rem;flex-wrap:wrap;margin:0.2rem 0 0.1rem'>"
+                "<span style='font-size:1.35rem;font-weight:700;color:#111827'>Tabla mensual</span>"
+                "<span style='font-size:0.8rem;color:#6B7280'>gasto por mes en millones de pesos · el color marca los "
+                "meses de mayor gasto de cada fila</span></div>", unsafe_allow_html=True)
+    tm = df.copy()
+    tm["ubic"] = tm["ubicacion"].fillna("").astype(str).str.strip()
+    if "planta" in tm.columns:        # KAHAI no llena Ubicación: el lote está en PLANTA
+        tm["ubic"] = tm["ubic"].where(tm["ubic"] != "", tm["planta"].fillna("").astype(str).str.strip())
+    for c_ in ["ceco", "rubro", "actividad", "detalle", "tercero", "descripcion", "bloque"]:
+        if c_ in tm.columns:
+            tm[c_] = tm[c_].fillna("").astype(str).str.strip().replace("", "(sin dato)")
+    tm["ubic"] = tm["ubic"].replace("", "(sin dato)")
+    NIV_TM = ([("Empresa", "empresa")] if vista == GRUPO else []) + \
+        [("CECO", "ceco"), ("Rubro", "rubro"), ("Actividad", "actividad"), ("Ubicación / Lote", "ubic")]
+    cols_t = st.columns([1] * len(NIV_TM) + [1.6])
+    base_t, elegidos_t = tm, []
+    for i, (nom, campo) in enumerate(NIV_TM):
+        libre = len(elegidos_t) < i
+        ops = sorted(base_t[campo].unique().tolist()) if not libre else []
+        val = cols_t[i].selectbox(nom, ["Todos"] + ops, key=f"tm_{'_'.join(elegidos_t)}_{campo}", disabled=libre,
+                                  help="Elija el nivel de arriba primero" if libre else None)
+        if val != "Todos" and not libre:
+            base_t = base_t[base_t[campo] == val]
+            elegidos_t.append(val)
+    desde, hasta = cols_t[-1].select_slider(
+        "Meses", options=periodos, format_func=etiqueta,
+        value=((max(periodos[0], mover(mes, -11)), mes) if todos else (seleccion[0], mes) if anual
+               else (max(periodos[0], mover(mes, -11)), mes)))
+    sig = NIV_TM[len(elegidos_t)] if len(elegidos_t) < len(NIV_TM) else ("Descripción", "descripcion")
+    ABRIR = {"Siguiente nivel": sig, "Lote / ubicación": ("Ubicación / Lote", "ubic"), "Detalle": ("Detalle", "detalle"),
+             "Tercero": ("Tercero", "tercero"), "Mano de obra / otros": ("Mano de obra / otros", "bloque")}
+    r1, r2 = st.columns([2.2, 3], vertical_alignment="center")
+    abrir = r2.segmented_control("Abrir por", list(ABRIR), default="Siguiente nivel", key="tm_abrir",
+                                 label_visibility="collapsed") or "Siguiente nivel"
+    ver_t, por_t = ABRIR[abrir]
+    ruta_t = " › ".join([titulo_vista] + elegidos_t)
+    r1.markdown(f'<div style="font-size:0.82rem;color:#374151">📍 <b>{ruta_t}</b> &nbsp;·&nbsp; filas por '
+                f'<b>{ver_t}</b></div>', unsafe_allow_html=True)
+
+    meses_rango = [p for p in periodos if desde <= p <= hasta]
+    d_t = base_t[base_t["periodo"].isin(meses_rango)]
+    if d_t.empty:
+        st.info("Sin gasto con estos filtros.")
     else:
-        campos = (["empresa"] if vista == GRUPO else []) + [NIVELES[n] for n in niveles]
-        meses_rango = [p for p in periodos if desde <= p <= hasta]
-        d = df[df["periodo"].isin(meses_rango)]
-        piv = d.pivot_table(index=campos, columns="periodo", values="valor", aggfunc="sum", fill_value=0)
+        piv = d_t.pivot_table(index=por_t, columns="periodo", values="valor", aggfunc="sum", fill_value=0)
         piv = piv.reindex(columns=meses_rango, fill_value=0)
-        piv.columns = [etiqueta(p) for p in piv.columns]
         piv["Total"] = piv.sum(axis=1)
-        piv = piv.reset_index()
+        piv = piv.sort_values("Total", ascending=False)
+        n_max = 15
+        if len(piv) > n_max + 1 and not st.session_state.get("tm_todas"):
+            resto = piv.iloc[n_max:]
+            piv = pd.concat([piv.iloc[:n_max], resto.sum().to_frame(f"Otras ({len(resto)})").T])
+        total_t = piv.sum()
 
-        # Subtotal por el primer nivel cuando hay más de un nivel
-        subt = st.checkbox("Mostrar subtotales por el primer nivel", value=len(campos) > 1)
-        cols_num = [c for c in piv.columns if c not in campos]
-        total = pd.DataFrame([{**{c: "" for c in campos}, **piv[cols_num].sum()}])
-        total[campos[0]] = "TOTAL"
-        if subt and len(campos) > 1:
-            primero = campos[0]
-            sub = piv.groupby(primero)[cols_num].sum().reset_index()
-            for c in campos[1:]:
-                sub[c] = ""
-            sub[campos[1]] = "▸ SUBTOTAL"
-            sub["_orden"] = 0
-            piv["_orden"] = 1
-            piv = pd.concat([sub, piv]).sort_values([primero, "_orden", "Total"],
-                                                    ascending=[True, True, False]).drop(columns="_orden")
-        piv = pd.concat([piv, total], ignore_index=True)[campos + cols_num]   # niveles primero
-        nombres = {"empresa": "Empresa", **{v: k for k, v in NIVELES.items()}}
-        piv = piv.rename(columns=nombres)
-        etiquetas = [nombres[c] for c in campos]
+        def m_(v):
+            if not v:
+                return "—"
+            return f"{v / 1e6:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-        st.caption(f"{len(piv) - 1:,} filas".replace(",", "."))
-        resaltar = lambda r: ["font-weight: bold; background-color: rgba(128,128,128,0.12)"
-                              if (r.iloc[0] == "TOTAL" or (len(etiquetas) > 1 and r[etiquetas[1]] == "▸ SUBTOTAL"))
-                              else "" for _ in r]
-        if len(piv) > 3000:
-            st.warning("Más de 3.000 filas: se muestran sin formato. Reduzca niveles o meses.")
-            st.dataframe(piv, hide_index=True, width="stretch", height=600)
-        else:
-            st.dataframe(piv.style.format(pesos, subset=cols_num).apply(resaltar, axis=1),
-                         hide_index=True, width="stretch", height=600)
+        def fila_html(nombre, fila, clase=""):
+            vals = [fila[p_] for p_ in meses_rango]
+            tope = max([abs(v_) for v_ in vals] + [1])
+            celdas = ""
+            for v_ in vals:
+                a_ = 0 if clase or not v_ else 0.06 + 0.30 * abs(v_) / tope     # intensidad según el mes más alto
+                estilo = f" style='background:rgba(27,94,32,{a_:.2f})'" if a_ else ""
+                celdas += f"<td{estilo}>{m_(v_)}</td>"
+            pct = fila["Total"] / total_t["Total"] if total_t["Total"] else 0
+            pct_txt = f"{pct:.1%}".replace(".", ",")
+            return (f"<tr{clase}><td class='izq'>{__import__('html').escape(str(nombre))}</td>{celdas}"
+                    f"<td class='tt'>{m_(fila['Total'])}</td><td class='pc'>{pct_txt}</td></tr>")
 
-        def excel_tabla(piv=piv):
+        cab_t = ("<tr><th class='izq'>" + ver_t + "</th>" + "".join(f"<th>{etiqueta(p_)}</th>" for p_ in meses_rango)
+                 + "<th>Total</th><th>%</th></tr>")
+        filas_t = [fila_html(n_, f_) for n_, f_ in piv.iterrows()]
+        filas_t.append(fila_html("TOTAL", total_t, " class='tot'"))
+        html_t = "".join(filas_t)
+        st.markdown("""<style>
+          .ttm { overflow-x:auto; border:1px solid #E5E7EB; border-radius:10px; margin-top:0.3rem; }
+          .ttm table { border-collapse:collapse; width:100%; font-size:0.8rem; font-variant-numeric:tabular-nums; }
+          .ttm th { background:#F6F8F5; color:#374151; font-weight:600; text-align:right; padding:0.32rem 0.45rem;
+                    border-bottom:1px solid #E1E8DF; white-space:nowrap; }
+          .ttm td { text-align:right; padding:0.24rem 0.45rem; border-bottom:1px solid #F0F2F0; white-space:nowrap; }
+          .ttm .izq { text-align:left; white-space:normal; min-width:130px; max-width:220px; line-height:1.2; }
+          .ttm td.tt { font-weight:700; background:#FAFBFA; border-left:1px solid #E5E7EB; }
+          .ttm td.pc { color:#6B7280; }
+          .ttm tr.tot td { font-weight:800; border-top:2px solid #CBD5CC; background:#F3F6F3; }
+        </style>""", unsafe_allow_html=True)
+        st.markdown(f"<div class='ttm'><table><thead>{cab_t}</thead><tbody>{html_t}</tbody></table></div>",
+                    unsafe_allow_html=True)
+        n_filas = d_t[por_t].nunique()
+        if n_filas > n_max + 1:
+            st.toggle(f"Ver todas las filas ({n_filas})", key="tm_todas",
+                      help="Por defecto se muestran las 15 de mayor gasto y el resto se junta en 'Otras'.")
+        st.caption(f"Millones de pesos · {etiqueta(meses_rango[0])} a {etiqueta(meses_rango[-1])} · % = parte del total "
+                   "del periodo. Con 'Abrir por' se ve la misma selección por lote, detalle, tercero o mano de obra.")
+
+        def excel_tabla(d=d_t):
+            campos_x = [c_ for _, c_ in NIV_TM] + ["detalle", "descripcion"]
+            px = d.pivot_table(index=campos_x, columns="periodo", values="valor", aggfunc="sum", fill_value=0)
+            px.columns = [etiqueta(c_) for c_ in px.columns]
+            px["Total"] = px.sum(axis=1)
             salida = io.BytesIO()
-            piv.to_excel(salida, index=False, sheet_name="Tabla mensual")
+            px.reset_index().rename(columns={c_: n_ for n_, c_ in NIV_TM}).to_excel(salida, index=False,
+                                                                                   sheet_name="Tabla mensual")
             return salida.getvalue()
-        # El Excel se arma solo al tocar el botón (antes se armaba en cada clic y hacía lenta la app)
-        st.download_button("Descargar en Excel", excel_tabla,
+        # El Excel se arma solo al tocar el botón (y trae todo el detalle de la selección)
+        st.download_button("Descargar en Excel (con todo el detalle)", excel_tabla,
                            file_name=f"Tabla_{vista.split()[0]}_{desde}_{hasta}.xlsx")
 
 
