@@ -1235,7 +1235,7 @@ def mostrar_lotes_aceite(a_ref, kg):
         st.caption("⚠️ Para revisar: " + " · ".join(avisos))
 
 
-LOTES_KAHAI = {"CUMARAL": "CUMARAL · HM", "RESTREPO": "RESTREPO · MPB", "PTO GAITAN": "PTO GAITAN",
+LOTES_KAHAI = {"CUMARAL": "CUMARAL (HM + MME)", "RESTREPO": "RESTREPO (MPB)", "PTO GAITAN": "PTO GAITAN",
                "VILLA/CIO": "General (Villavicencio)"}
 
 
@@ -1376,7 +1376,7 @@ def mostrar_cultivo_kahai():
     sin_div = not todos_l and lote_sel in LOTES_KAHAI and not any(l == lote_sel for l, _ in arb)
     st.caption(f"Pesos en millones. Var. = {a_ref}{hasta} contra los mismos meses de {a_ref - 1} (rojo = subió el gasto). "
                "El lote sale de la columna PLANTA del consolidado; los rubros _HM (Cumaral) y _MPB (Restrepo) se juntan "
-               "con su rubro base para poder comparar lotes."
+               "con su rubro base. Cumaral junta sus dos bloques, HM y MME."
                + (" ⚠️ Para ver $/árbol y $/kg, llene la hoja CULTIVO_LOTES de Graficas\\PRODUCCION_KAHAI.xlsx "
                   "(árboles y kg por bloque: Cumaral HM y MME, Restrepo MPB) y corra:  python motor_procesamiento_kahai.py"
                   if not arb and not kgl else " Cumaral suma sus bloques HM y MME (pase el mouse sobre el valor para ver cada bloque)."))
