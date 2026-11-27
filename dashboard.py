@@ -1817,11 +1817,9 @@ def mostrar_cu_kahai(lugar_tit=None):
             d_lotes = sum(mapa[(l_, a)] for l_ in con_dato)
             d_todos = sum(mapa.get((l_, a), 0) for l_ in LOTES_REALES_KAHAI)
             d_ = max(d_lotes, d_todos if general else 0)
-            if "kg_lote" in tipos_b and por != "lote":
-                # Cosecha: un solo divisor por año para TODA la tabla que se está viendo = kg de los lotes que
-                # tienen gasto de cosecha en esa tabla (si hay gasto general, todos los lotes). Así las filas
-                # suman el TOTAL. El costo de cada lote se ve con "Ver por lote".
-                d_, faltan_l, general = kg_tabla(a), [], True
+            # Cosecha: cada cosecha va aparte (Wal, 27/11/2026): CUMARAL (HM + MME + POTRE), RESTREPO (MPB) y
+            # PTO GAITAN. Cada fila se divide SOLO por los kg de los lotes donde está su gasto ese año
+            # (ej. Cosecha_MPB ÷ kg de Restrepo). El gasto general (VILLA/CIO, sin lote) usa los kg de todos los lotes.
             if not d_:
                 return np.nan, f"<span class='dv' style='color:#9A5B00'>{ic} sin dato</span>"
             g_ = con.loc[~con["lote"].isin(faltan_l), "valor"].sum()
