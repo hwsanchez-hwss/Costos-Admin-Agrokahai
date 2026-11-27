@@ -36,6 +36,12 @@ LOTE = re.compile(r"^(ML|L)\d+$|^HMPG$", re.I)
 #    hoja DIARIO, filas 1892-1895, 1904-1906 y 1914). A 50-60 g/árbol, ML4 necesitaba ~240 kg; los jornales de esos
 #    días muestran la fertilización en ML15, ML16, ML17, ML5, ML1, ML2, ML3, ML4, L1, L2 y L3.
 REASIGNAR_POR_JORNALES = {1891, 1892, 1893, 1894, 1903, 1904, 1905, 1913}
+#    Los lotes que ese día (o ±2 días) ya tienen su PROPIO registro de fertilizante no entran: L1, L2 y L3 tuvieron
+#    jornales el 28/07, pero recibieron su propio DURAMON 13,8-11,8-25,7 (árboles maduros, ~150 g/árbol); el 21-13-16
+#    es de los lotes ML jóvenes. Entre los lotes que quedan, se reparte por árboles.
+# Cantidades con error de decimales (insumo_id: cantidad correcta)
+#  - fila 1387 de INSUMOS_AGRO.xlsx (DIARIO), 04/06/2022, ML4: 1.309 kg -> 130,9 kg
+CORREGIR_CANTIDAD = {1386: 130.9}
 
 # rubro contable -> (grupos de insumos de la app de Campo, rubros de mano de obra de la app de Campo)
 RUBROS = {
@@ -102,11 +108,18 @@ def corregir_lotes(ins, ref_censo):
     jor = ins.attrs.get("jornales")
     if jor is None or "insumo_id" not in ins:
         return ins, []
+    for id_, cant in CORREGIR_CANTIDAD.items():          # errores de decimales
+        ins.loc[ins["insumo_id"] == id_, "cant"] = cant
     malos = ins[ins["insumo_id"].isin(REASIGNAR_POR_JORNALES)]
     nuevos, resumen, movidos = [], [], []
     for _, r in malos.iterrows():
         dia = pd.to_datetime(r["fecha"], errors="coerce").normalize()
         lotes = jor[(jor["dia"] == dia) & (jor["actividad"] == r["actividad"])]["lote"].unique().tolist()
+        # fuera los lotes con su propio registro de un insumo del mismo grupo esos días (±2)
+        f_ = pd.to_datetime(ins["fecha"], errors="coerce").dt.normalize()
+        propios = ins[(ins["grupo"] == r["grupo"]) & ~ins["insumo_id"].isin(REASIGNAR_POR_JORNALES)
+                      & ((f_ - dia).abs() <= pd.Timedelta(days=2))]["lote"].unique()
+        lotes = [l_ for l_ in lotes if l_ not in set(propios)]
         arb = {l_: censo_lote(ref_censo, int(r["anio"]), l_) for l_ in lotes}
         arb = {l_: v for l_, v in arb.items() if v > 0}
         if not arb:
