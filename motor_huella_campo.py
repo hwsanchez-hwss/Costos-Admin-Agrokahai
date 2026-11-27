@@ -30,18 +30,13 @@ import config as C
 
 LOTE = re.compile(r"^(ML|L)\d+$|^HMPG$", re.I)
 
-# Registros de insumos con el lote mal cargado (confirmado por Wal, 27/11/2026): en vez de su lote, se reparten
-# entre los lotes que tuvieron jornales de esa misma actividad ese mismo día, en proporción a sus árboles (censo).
-#  - Fertilizante 21,1-13,3-16 del 26 al 28/07/2022: 8 salidas (6.382 kg) cargadas todas a ML4 (INSUMOS_AGRO.xlsx,
-#    hoja DIARIO, filas 1892-1895, 1904-1906 y 1914). A 50-60 g/árbol, ML4 necesitaba ~240 kg; los jornales de esos
-#    días muestran la fertilización en ML15, ML16, ML17, ML5, ML1, ML2, ML3, ML4, L1, L2 y L3.
-REASIGNAR_POR_JORNALES = {1891, 1892, 1893, 1894, 1903, 1904, 1905, 1913}
-#    Los lotes que ese día (o ±2 días) ya tienen su PROPIO registro de fertilizante no entran: L1, L2 y L3 tuvieron
-#    jornales el 28/07, pero recibieron su propio DURAMON 13,8-11,8-25,7 (árboles maduros, ~150 g/árbol); el 21-13-16
-#    es de los lotes ML jóvenes. Entre los lotes que quedan, se reparte por árboles.
-# Cantidades con error de decimales (insumo_id: cantidad correcta)
-#  - fila 1387 de INSUMOS_AGRO.xlsx (DIARIO), 04/06/2022, ML4: 1.309 kg -> 130,9 kg
-CORREGIR_CANTIDAD = {1386: 130.9}
+# Registros de insumos mal cargados en la app de Campo (revisado con Wal el 27/11/2026). Se corrigen aquí solo si
+# siguen con el dato equivocado; cuando se corran en la app de Campo (corregir_insumos_2022.py), esto ya no hace nada.
+#  - 8 salidas de FERTILIZANTE 21,1-13,3-16 del 26 al 28/07/2022 cargadas todas a ML4 (INSUMOS_AGRO.xlsx, hoja DIARIO,
+#    filas 1892-1895, 1904-1906, 1914): cada una es de un lote con jornales ese día (~100 g/árbol en todos).
+CORREGIR_LOTE = {1891: "ML15", 1892: "ML16", 1893: "ML17", 1894: "ML5", 1903: "ML3", 1904: "ML2", 1913: "ML1"}
+#  - fila 1387 (04/06/2022, ML4): 1.309 kg -> 130,9 kg (error de decimales)
+CORREGIR_CANTIDAD = {1386: (1309, 130.9)}
 
 # rubro contable -> (grupos de insumos de la app de Campo, rubros de mano de obra de la app de Campo)
 RUBROS = {
@@ -68,7 +63,6 @@ def leer_campo(carpeta=None):
         return None, None, ""
     with zipfile.ZipFile(zips[-1]) as z:
         ins = _leer_csv_respaldo(z, "principal/csv/insumos_diario.csv")
-        jor = _leer_csv_respaldo(z, "principal/csv/registros_diarios.csv")
         cat = _leer_csv_respaldo(z, "principal/csv/cat_act_ubic.csv")
         prod = _leer_csv_respaldo(z, "principal/csv/productos_insumos.csv")
         mo = _leer_csv_respaldo(z, "principal/csv/costos_actividad_mes.csv")
@@ -83,12 +77,6 @@ def leer_campo(carpeta=None):
     mo["lote"] = mo["ubicacion"].astype(str).str.strip().str.upper()
     mo["valor"] = pd.to_numeric(mo["valor_total_actividad"], errors="coerce")
     mo = mo[(mo["empresa"] == "AGROCACAY") & mo["lote"].str.match(LOTE) & (mo["valor"] > 0)]
-    # jornales: qué lotes tuvieron cada actividad cada día (para corregir insumos con el lote mal cargado)
-    jor = jor[["fecha", "cod_act_ubic"]].merge(cat_act, on="cod_act_ubic", how="left")
-    jor["dia"] = pd.to_datetime(jor["fecha"], errors="coerce").dt.normalize()
-    jor["lote"] = jor["ubicacion"].astype(str).str.strip().str.upper()
-    jor = jor[jor["lote"].str.match(LOTE)][["dia", "actividad", "lote"]].drop_duplicates()
-    ins.attrs["jornales"] = jor
     return ins, mo, os.path.basename(zips[-1])
 
 
@@ -102,41 +90,23 @@ def censo_lote(ref_censo, anio, lote):
     return ref_censo[(previos[-1], k)] if previos else 0
 
 
-def corregir_lotes(ins, ref_censo):
-    """Registros de REASIGNAR_POR_JORNALES: su cantidad se reparte entre los lotes con jornales de la misma actividad
-    ese mismo día, en proporción a sus árboles. Devuelve los insumos corregidos y un resumen de lo que se movió."""
-    jor = ins.attrs.get("jornales")
-    if jor is None or "insumo_id" not in ins:
-        return ins, []
-    for id_, cant in CORREGIR_CANTIDAD.items():          # errores de decimales
-        ins.loc[ins["insumo_id"] == id_, "cant"] = cant
-    malos = ins[ins["insumo_id"].isin(REASIGNAR_POR_JORNALES)]
-    nuevos, resumen, movidos = [], [], []
-    for _, r in malos.iterrows():
-        dia = pd.to_datetime(r["fecha"], errors="coerce").normalize()
-        lotes = jor[(jor["dia"] == dia) & (jor["actividad"] == r["actividad"])]["lote"].unique().tolist()
-        # fuera los lotes con su propio registro de un insumo del mismo grupo esos días (±2)
-        f_ = pd.to_datetime(ins["fecha"], errors="coerce").dt.normalize()
-        propios = ins[(ins["grupo"] == r["grupo"]) & ~ins["insumo_id"].isin(REASIGNAR_POR_JORNALES)
-                      & ((f_ - dia).abs() <= pd.Timedelta(days=2))]["lote"].unique()
-        lotes = [l_ for l_ in lotes if l_ not in set(propios)]
-        arb = {l_: censo_lote(ref_censo, int(r["anio"]), l_) for l_ in lotes}
-        arb = {l_: v for l_, v in arb.items() if v > 0}
-        if not arb:
-            continue                       # sin jornales ese día: se deja como estaba
-        tot = sum(arb.values())
-        movidos.append(r.name)
-        for l_, v in arb.items():
-            n = r.copy()
-            n["lote"], n["cant"] = l_, r["cant"] * v / tot
-            nuevos.append(n)
-        kg_txt = f"{r['cant']:,.0f}".replace(",", ".")
-        resumen.append(f"{dia:%d/%m/%Y} {kg_txt} kg de {r['lote']} → {', '.join(sorted(arb))}")
-    if not nuevos:
+def corregir_lotes(ins, ref_censo=None):
+    """Aplica CORREGIR_LOTE y CORREGIR_CANTIDAD a los registros que todavía tengan el dato equivocado."""
+    resumen = []
+    if "insumo_id" not in ins:
         return ins, resumen
-    corregidos = pd.concat([ins.drop(index=movidos), pd.DataFrame(nuevos)], ignore_index=True)
-    corregidos.attrs = ins.attrs
-    return corregidos, resumen
+    ins = ins.copy()
+    for id_, lote in CORREGIR_LOTE.items():
+        m = (ins["insumo_id"] == id_) & (ins["lote"] == "ML4")
+        if m.any():
+            ins.loc[m, "lote"] = lote
+            resumen.append(f"insumo {id_}: {ins.loc[m, 'cant'].iloc[0]:,.0f} kg de ML4 → {lote}".replace(",", "."))
+    for id_, (malo, bueno) in CORREGIR_CANTIDAD.items():
+        m = (ins["insumo_id"] == id_) & ((ins["cant"] - malo).abs() < 0.01)
+        if m.any():
+            ins.loc[m, "cant"] = bueno
+            resumen.append(f"insumo {id_}: {malo} kg → {bueno} kg".replace(".", ","))
+    return ins, resumen
 
 
 def calcular(ins, mo, ref_censo, fuente):
@@ -170,7 +140,7 @@ def correr(ref=None):
         ref = leer_referencias()
     ins, movidos = corregir_lotes(ins, ref["censo"])
     for m_ in movidos:
-        print(f"  Corrección de lote (insumo mal cargado): {m_}")
+        print(f"  Corrección (registro mal cargado en la app de Campo): {m_}")
     h = calcular(ins, mo, ref["censo"], fuente)
     con = sqlite3.connect(C.BASE_LOCAL)
     h.to_sql("agrocacay_huella_campo", con, if_exists="replace", index=False)
