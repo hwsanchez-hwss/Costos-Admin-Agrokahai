@@ -1814,6 +1814,10 @@ def mostrar_cu_kahai(lugar_tit=None):
             general = bool(lotes_c - LOTES_REALES_KAHAI)
             con_dato = {l_ for l_ in reales if mapa.get((l_, a))}
             faltan_l = sorted(reales - con_dato)
+            if "kg_lote" in tipos_b and (por != "lote" or len(reales) > 1) and faltan_l and con_dato:
+                # Cosecha de un lote sin kg ese año (ej. PTO GAITAN 2019): su gasto se suma y se divide por los kg
+                # del año, sin nota. En "Ver por lote" ese lote sí muestra "sin dato".
+                general, faltan_l = True, []
             d_lotes = sum(mapa[(l_, a)] for l_ in con_dato)
             d_todos = sum(mapa.get((l_, a), 0) for l_ in LOTES_REALES_KAHAI)
             d_ = max(d_lotes, d_todos if general else 0)
