@@ -243,6 +243,12 @@ def correr():
                 (datetime.now().strftime("%Y-%m-%d %H:%M"), ref["archivo"], ref["fecha_archivo"]))
     con.commit()
     con.close()
+    # Pesos por lote de la app de Campo, para "Repartir con datos de campo" (gasto sin lote de Nutrición, MIAR…)
+    try:
+        import motor_huella_campo
+        motor_huella_campo.correr(ref)
+    except Exception as e:                      # la huella es un extra: si falla, el costo unitario queda igual
+        print(f"⚠️ Huella de campo no calculada: {e}")
     print("\nListo. El dashboard ya muestra el costo unitario actualizado.")
 
 

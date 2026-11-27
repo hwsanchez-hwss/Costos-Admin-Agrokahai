@@ -1034,6 +1034,44 @@ def cargar_cu(version_datos):
     return cu, ultimo
 
 
+@st.cache_data(show_spinner="Repartiendo por lote con la app de Campo...")
+def repartir_con_campo(version_datos):
+    """Costo unitario con el gasto SIN LOTE de los rubros por censo (Nutrición, MIAR, Riego, Act. complementarias)
+    repartido entre los lotes según la app de Campo (tabla agrocacay_huella_campo, motor_huella_campo.py):
+    insumos por lo aplicado en cada lote, mano de obra y lo demás por la mano de obra de campo del rubro.
+    Cada parte queda con el censo de su lote como divisor; sin datos de campo ese año, sigue el respaldo."""
+    cu, _ = cargar_cu(version_datos)
+    h = F.leer_tabla("agrocacay_huella_campo")
+    if cu.empty or h.empty:
+        return cu, 0.0
+    h = h.rename(columns={"rubro": "_r", "tipo": "_t", "lote": "_lote", "censo": "_censo"})
+    h["anio"] = pd.to_numeric(h["anio"], errors="coerce")
+    rn = cu["rubro"].astype(str).str.strip().str.lower()
+    mask = (cu["origen_divisor"].astype(str).str.startswith("Respaldo") & rn.isin(set(h["_r"]))
+            & (cu["regla_divisor"].astype(str).str.upper() == "CENSO"))
+    m = cu[mask].copy()
+    m["_r"] = rn[mask]
+    m["_t"] = np.where(m["detalle"].astype(str).str.strip().str.lower()
+                       .isin(["insumos agricolas", "insumos agrícolas", "materia orgánica", "materia organica"]),
+                       "insumo", "mano_obra")
+    llaves = [c for c in m.columns if c not in ("valor", "fila_excel", "huella", "costo_unitario", "ubicacion",
+                                                "divisor", "censo", "origen_divisor")]
+    agg = m.groupby(llaves, dropna=False, as_index=False)["valor"].sum()
+    j = agg.merge(h[["anio", "_r", "_t", "_lote", "peso", "_censo"]], on=["anio", "_r", "_t"], how="left")
+    sin = j[j["_lote"].isna()].drop(columns=["_lote", "peso", "_censo"])      # año sin datos de campo: respaldo
+    con = j[j["_lote"].notna()].copy()
+    con["valor"] = con["valor"] * con["peso"]
+    con["ubicacion"] = con["_lote"]
+    con["censo"] = con["divisor"] = con["_censo"]
+    con["origen_divisor"] = "Repartido con datos de campo"
+    con["costo_unitario"] = con["valor"] / con["divisor"]
+    sin = sin.assign(ubicacion="(sin lote)", origen_divisor="Respaldo: árboles vivos", divisor=sin["arb_total_vivos"],
+                     censo=0, costo_unitario=sin["valor"] / sin["arb_total_vivos"])
+    nuevo = pd.concat([cu[~mask], con.drop(columns=["_lote", "peso", "_censo"]), sin], ignore_index=True)
+    nuevo = nuevo.drop(columns=["_r", "_t"], errors="ignore")
+    return nuevo, float(con["valor"].sum())
+
+
 def ponderado(d, por, eje):
     """Medida DAX 'Costo Unitario Ponderado' de Power BI (la misma de la app de campo):
        grupos (mes, lote, regla): vDebito = suma débito; vDivisor = máx divisor; vCU = vDebito / vDivisor
@@ -2142,6 +2180,10 @@ with pest[2]:
                                "después del último cálculo. Corra:  python motor_costo_unitario.py")
             calc_txt = (f" · cálculo {str(ultimo_cu['fecha'].iloc[0])[:10]}" if not ultimo_cu.empty else "")
 
+            # "Repartir con datos de campo": el gasto sin lote de Nutrición, MIAR… se reparte por lote con la app de Campo
+            repartido_campo = 0.0
+            if st.session_state.get("cu_campo", False):
+                datos_cu, repartido_campo = repartir_con_campo(VERSION_DATOS)
             cu = datos_cu[datos_cu["naturaleza"].isin(naturalezas) & datos_cu["tipo"].isin(tipos)]
 
             # ---- Indicadores: costo total por árbol vivo (todos los rubros juntos)
@@ -2185,7 +2227,12 @@ with pest[2]:
             else:
                 ver, por = "Ubicación", "ubicacion"
             ruta = " › ".join([titulo_vista] + elegidos_n)
-            rc1, rc3, rc2 = cab_cu.columns([3.7, 1.1, 1.3], vertical_alignment="center")
+            rc1, rc4, rc3, rc2 = cab_cu.columns([2.6, 1.55, 1.1, 1.3], vertical_alignment="center")
+            rc4.toggle("🧭 Repartir con datos de campo", key="cu_campo", value=False,
+                       help="El gasto de Nutrición, MIAR, Riego y Act. complementarias que la contabilidad no carga a un "
+                            "lote (Insumos Agrícolas, Fertilizante, CIMARRON…) se reparte entre los lotes según la app "
+                            "de Campo: insumos por lo aplicado en cada lote y mano de obra por la registrada en cada "
+                            "lote. Así cada lote se divide por su censo, sin respaldo.")
             # Ver por lote en cualquier nivel (ej. MIAR por lote sin elegir actividad)
             if por != "ubicacion":
                 if rc3.toggle("📍 Ver por lote", key="cu_por_lote", value=False,
@@ -2397,6 +2444,10 @@ with pest[2]:
                         return f'<span class="dv" title="Regla {rg}: sin divisor en este período">{ic} sin divisor</span>'
                     extra = (' <span style="color:#9A5B00" title="Parte del gasto de esta celda no tiene dato de la regla '
                              '(ej. lote sin censo) y se dividió por los árboles vivos del año">+ respaldo</span>') if hay_resp else ""
+                    if (o == "Repartido con datos de campo").any():
+                        extra += (' <span style="color:#1B5E20" title="Parte del gasto no venía cargada a un lote y se '
+                                  'repartió entre los lotes según la app de Campo (insumos aplicados y mano de obra)">'
+                                  '· 🧭 campo</span>')
                     return f'<span class="dv" title="Divisor de la regla {rg}">{ic} {pesos(v)} {UNI_DIV.get(rg, "")}{extra}</span>'
 
                 def html_tabla_cu(t, nombre_c, b=None, bg=None, por_c=None):
