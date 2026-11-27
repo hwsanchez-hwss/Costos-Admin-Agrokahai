@@ -141,3 +141,6 @@ EMPRESAS_COSTO_UNITARIO = ["AGROCACAY"]
 
 # Divisores de procesamiento de KAHAI (kg por año: concha, nuez, aceite) y qué costo va con cada uno
 ARCHIVO_PRODUCCION_KAHAI = os.path.join(CARPETA_EXCEL, "Graficas", "PRODUCCION_KAHAI.xlsx")
+# Respaldos diarios de la app de Campo (Aplicacion_AgroKahai): de ahí sale el vivero (bolsas, entregas, descartes)
+CARPETA_RESPALDOS_CAMPO = os.environ.get("CARPETA_RESPALDOS_CAMPO", os.path.join(
+    os.path.expanduser("~"), "OneDrive", "SEGUIMIENT", "BASES", "Aplicacion_AgroKahai", "Respaldos"))

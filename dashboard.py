@@ -1882,6 +1882,12 @@ def mostrar_cu_kahai(lugar_tit=None):
     faltan_txt = []
     if not plantas and (base["ceco"].str.upper() == "VIVERO").any():
         faltan_txt.append("plantas producidas del vivero (hoja VIVERO)")
+    if plantas and (base["ceco"].str.upper() == "VIVERO").any():
+        fte_v = str(vv["fuente"].dropna().iloc[0]) if "fuente" in vv and vv["fuente"].notna().any() else ""
+        st.caption("🌱 Vivero ÷ plantas de la camada del año = entregadas (siembra + resiembra, AGROCACAY y terceros) "
+                   "+ las que quedan en el vivero. Las camadas recientes cambian a medida que se entregan o descartan "
+                   "plantas." + (f" Fuente: app de Campo, respaldo del "
+                                 f"{'/'.join(reversed(fte_v[9:19].split('-')))}." if fte_v.startswith("respaldo_") else ""))
     if not kgf and (base["ceco"].str.upper() == "FRUTA").any():
         faltan_txt.append("kg de fruta comprada (hoja FRUTA_COMPRADA)")
     if not arb and (base["ceco"].str.upper() == "CULTIVO").any():
