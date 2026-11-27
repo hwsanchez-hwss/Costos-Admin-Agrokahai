@@ -757,6 +757,24 @@ st.markdown("""<style>
   [class*="st-key-cab_"] [data-testid="stWidgetLabel"] { margin-bottom:0.05rem; min-height:1.15rem; }
   [class*="st-key-cab_"] [data-baseweb="select"] > div { min-height:2.3rem; }
   .ruta-cab { font-size:0.82rem; color:#374151; }
+  /* Tablas de costo unitario: Rubro, Gasto total y % del gasto quedan fijas al desplazarse a la derecha */
+  :is(.tcu,.tck,.ttm,.tviv) table { border-collapse:separate !important; border-spacing:0 !important; }
+  :is(.tcu,.tck) :is(th,td):nth-child(-n+3) { position:sticky; z-index:2; box-sizing:border-box; }
+  :is(.tcu,.tck) :is(th,td):nth-child(1) { left:0; width:175px !important; min-width:175px !important; max-width:175px !important; }
+  :is(.tcu,.tck) :is(th,td):nth-child(2) { left:175px; width:88px !important; min-width:88px !important; max-width:88px !important; }
+  :is(.tcu,.tck) :is(th,td):nth-child(3) { left:263px; width:82px !important; min-width:82px !important; max-width:82px !important;
+        box-shadow:inset -1px 0 0 #D5DDD4, 6px 0 8px -6px rgba(16,24,40,0.22); }
+  :is(.tcu,.tck) td:nth-child(-n+3) { background:#FFFFFF; }
+  :is(.tcu,.tck) th:nth-child(-n+3) { background:#F6F8F5; z-index:3; white-space:normal !important; }
+  :is(.tcu,.tck) tr.tot td:nth-child(-n+3) { background:#FAFBFA; }
+  .tcu tr.prom td:nth-child(-n+3) { background:#F7FAF7; }
+  .tcu tr.dir td:nth-child(-n+3) { background:#F1F7F1; }
+  .tcu tbody tr:hover td:nth-child(-n+3) { background:#F9FBF9; }
+  /* Tabla mensual y Vivero: la primera columna (el nombre) queda fija */
+  :is(.ttm,.tviv) :is(th,td):first-child { position:sticky; left:0; z-index:2; background:#FFFFFF;
+        box-shadow:inset -1px 0 0 #D5DDD4, 6px 0 8px -6px rgba(16,24,40,0.18); }
+  :is(.ttm,.tviv) th:first-child { background:#F6F8F5; z-index:3; }
+  .ttm tr.tot td:first-child { background:#F3F6F3; } .tviv tr.tot td:first-child { background:#F7F9F7; }
   /* Rubros elegidos (varios): las fichas bajan de línea en vez de esconderse */
   [class*="st-key-cab_"] [data-testid="stMultiSelectTagsContainer"] {
         flex:1 1 0 !important; min-width:0 !important; flex-wrap:wrap !important; align-content:flex-start;
