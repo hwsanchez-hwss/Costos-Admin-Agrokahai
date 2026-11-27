@@ -91,22 +91,9 @@ def leer_vivero_campo(carpeta=None):
     Cada vivero es una camada: VIVERO_24 = bolsas llenadas en 2024. Plantas de la camada =
     entregadas (siembra + resiembra, AGROCACAY y terceros) + las que quedan en el vivero (inventario actual).
     Por eso las camadas recientes cambian a medida que se entregan o se descartan plantas."""
-    import glob, re, zipfile
-    carpeta = carpeta or C.CARPETA_RESPALDOS_CAMPO
-    zips = sorted(glob.glob(os.path.join(carpeta, "respaldo_*.zip")))
+    import re
     vacio = pd.DataFrame(columns=["anio", "plantas", "entregadas", "en_vivero", "llenadas", "descartes", "fuente"])
-    if not zips:
-        return vacio
-    with zipfile.ZipFile(zips[-1]) as z:
-        nombre = next((n for n in z.namelist() if n.replace("\\", "/").endswith("campo/csv/vivero_mov.csv")), None)
-        if not nombre:
-            return vacio
-        with z.open(nombre) as f:
-            v = pd.read_csv(f)
-    v = v[pd.to_numeric(v.get("anulado", 0), errors="coerce").fillna(0) == 0].copy()
-    v["cantidad"] = pd.to_numeric(v["cantidad"], errors="coerce").fillna(0)
-    v["n"] = v["vivero"].astype(str).str.extract(r"VIVERO_(\d+)", flags=re.I)[0]
-    v = v[v["n"].notna()]
+    v, fuente = _vivero_mov_campo(carpeta)
     if v.empty:
         return vacio
     p = v.pivot_table(index="vivero", columns="tipo", values="cantidad", aggfunc="sum", fill_value=0)
@@ -120,8 +107,45 @@ def leer_vivero_campo(carpeta=None):
     out = p.groupby("anio").agg(entregadas=("Entrega", "sum"), en_vivero=("en_vivero", "sum"),
                                 llenadas=("Llenado", "sum"), descartes=("Descarte", "sum")).reset_index()
     out["plantas"] = out["entregadas"] + out["en_vivero"]
-    out["fuente"] = os.path.basename(zips[-1])
+    out["fuente"] = fuente
     return out[vacio.columns]
+
+
+def _vivero_mov_campo(carpeta=None):
+    """Movimientos del vivero (sin anulados) del respaldo más reciente de la app de Campo, solo viveros VIVERO_nn."""
+    import glob, re, zipfile
+    carpeta = carpeta or C.CARPETA_RESPALDOS_CAMPO
+    zips = sorted(glob.glob(os.path.join(carpeta, "respaldo_*.zip")))
+    if not zips:
+        return pd.DataFrame(), ""
+    with zipfile.ZipFile(zips[-1]) as z:
+        nombre = next((n for n in z.namelist() if n.replace("\\", "/").endswith("campo/csv/vivero_mov.csv")), None)
+        if not nombre:
+            return pd.DataFrame(), ""
+        with z.open(nombre) as f:
+            v = pd.read_csv(f)
+    v = v[pd.to_numeric(v.get("anulado", 0), errors="coerce").fillna(0) == 0].copy()
+    v["cantidad"] = pd.to_numeric(v["cantidad"], errors="coerce").fillna(0)
+    v["n"] = v["vivero"].astype(str).str.extract(r"VIVERO_(\d+)", flags=re.I)[0]
+    return v[v["n"].notna()].copy(), os.path.basename(zips[-1])
+
+
+def leer_entregas_vivero_campo(carpeta=None):
+    """Plantas entregadas por año por cada vivero (VIVERO_21 entregó tantas en 2022, tantas en 2023…)."""
+    v, _ = _vivero_mov_campo(carpeta)
+    cols = ["vivero", "anio", "entregadas", "siembra", "resiembra"]
+    if v.empty:
+        return pd.DataFrame(columns=cols)
+    e = v[v["tipo"] == "Entrega"].copy()
+    e["anio_e"] = pd.to_numeric(e["anio"], errors="coerce").fillna(
+        pd.to_datetime(e["fecha"], errors="coerce").dt.year).astype("Int64")
+    e["vivero_n"] = 2000 + e["n"].astype(int)
+    e["uso"] = e["uso"].fillna("").astype(str).str.lower()
+    out = e.groupby(["vivero_n", "anio_e"]).agg(entregadas=("cantidad", "sum")).reset_index()
+    for u_ in ("siembra", "resiembra"):
+        out[u_] = [e[(e["vivero_n"] == a_) & (e["anio_e"] == b_) & (e["uso"] == u_)]["cantidad"].sum()
+                   for a_, b_ in zip(out["vivero_n"], out["anio_e"])]
+    return out.rename(columns={"vivero_n": "vivero", "anio_e": "anio"})[cols]
 
 
 def leer_cultivo_lotes(ruta=None):
@@ -191,6 +215,7 @@ def correr():
     else:
         print("⚠️ No encontré respaldos de la app de Campo; el vivero sale de la hoja VIVERO del Excel.")
     viv.to_sql("kahai_vivero", con, if_exists="replace", index=False)
+    leer_entregas_vivero_campo().to_sql("kahai_vivero_entregas", con, if_exists="replace", index=False)
     fru.to_sql("kahai_fruta_comprada", con, if_exists="replace", index=False)
     print(f"Vivero: {viv['plantas'].notna().sum()} años con plantas · Fruta comprada: {fru['kg'].notna().sum()} datos de kg")
     cult = leer_cultivo_lotes(ruta)

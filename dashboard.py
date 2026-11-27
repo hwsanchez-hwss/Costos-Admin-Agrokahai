@@ -1898,14 +1898,213 @@ def mostrar_cu_kahai(lugar_tit=None):
                + (f" ⚠️ Falta en Graficas\\\\PRODUCCION_KAHAI.xlsx: {'; '.join(faltan_txt)}." if faltan_txt else ""))
 
 
+def mostrar_vivero_kahai(lugar_tit=None):
+    """Costo de cada vivero (camada de bolsas llenadas en un año) a lo largo de toda su vida ÷ sus plantas.
+    Gasto: contabilidad de KAHAI, CECO VIVERO, ubicación Vivero19, Vivero20… (2019 en adelante).
+    Bolsas y plantas: app de Campo (vivero_mov), vía el motor de procesamiento (tablas kahai_vivero y
+    kahai_vivero_entregas). Plantas = entregadas + las que quedan en el vivero (cálculo que Wal lleva en Excel)."""
+    import html as _h
+    titulo_pagina("Vivero", "gasto de cada vivero en toda su vida ÷ sus plantas · el número del vivero es el año en que "
+                            "se llenaron sus bolsas", lugar_tit)
+    k = datos[(datos["empresa"] == "KAHAI") & datos["naturaleza"].isin(naturalezas) & datos["tipo"].isin(tipos)].copy()
+    k = k[k["ceco"].fillna("").str.upper() == "VIVERO"]
+    vv = F.leer_tabla("kahai_vivero")
+    ve = F.leer_tabla("kahai_vivero_entregas")
+    if k.empty or vv.empty or "llenadas" not in vv:
+        st.info("Faltan datos del vivero. En el PC corra `python motor_procesamiento_kahai.py` (lee el respaldo más "
+                "reciente de la app de Campo y lo sube a la nube).")
+        return
+    k["anio"] = (k["periodo"] // 100).astype(int)
+    n_ = k["ubicacion"].fillna("").astype(str).str.extract(r"(?i)vivero_?(\d{2})$")[0]
+    k["vivero"] = pd.to_numeric(n_, errors="coerce").add(2000)
+    gasto = k.groupby("vivero")["valor"].sum()
+    gasto_anio = k.pivot_table(index="vivero", columns="anio", values="valor", aggfunc="sum", fill_value=0)
+    sin_viv = k.loc[k["vivero"].isna(), "valor"].sum()
+    primer_anio = int(k["anio"].min())
+    for c_ in ["anio", "llenadas", "entregadas", "en_vivero", "descartes", "plantas"]:
+        vv[c_] = pd.to_numeric(vv[c_], errors="coerce")
+    vv = vv.set_index(vv["anio"].astype(int))
+    viveros = sorted(set(int(v_) for v_ in gasto.index) | set(vv.index[vv["llenadas"].fillna(0) > 0]))
+    fte_v = str(vv["fuente"].dropna().iloc[0]) if "fuente" in vv and vv["fuente"].notna().any() else ""
+
+    def n0(v):
+        return "—" if v is None or pd.isna(v) or v == 0 else f"{v:,.0f}".replace(",", ".")
+
+    filas, resumen = [], []
+    for v_ in viveros:
+        g_ = float(gasto.get(v_, 0))
+        r_ = vv.loc[v_] if v_ in vv.index else None
+        ll, de, en, ev, pl = ((r_["llenadas"], r_["descartes"], r_["entregadas"], r_["en_vivero"], r_["plantas"])
+                              if r_ is not None else (0, 0, 0, 0, 0))
+        anios_g = int((gasto_anio.loc[v_] > 5e5).sum()) if v_ in gasto_anio.index else 0
+        if v_ < primer_anio:
+            estado, cl_ = f"gasto incompleto (antes de {primer_anio} no está)", "inc"
+        elif not ll:
+            estado, cl_ = "sin bolsas registradas en la app de Campo", "inc"
+        elif ev and ev > 0:
+            estado, cl_ = "en curso: aún tiene plantas", "cur"
+        else:
+            estado, cl_ = "cerrado", "ok"
+        resumen.append(dict(vivero=v_, gasto=g_, llenadas=ll, descartes=de, entregadas=en, en_vivero=ev, plantas=pl,
+                            estado=cl_))
+        cpp = g_ / pl if pl else None
+        cpb = g_ / ll if ll else None
+        pct = de / ll if ll else None
+        val = lambda x, div, und: ("<span class='nd'>—</span>" if not x or cl_ == "inc" and v_ < primer_anio else
+                                   f"{pesos(x)}<span class='dv'>÷ {n0(div)} {und}</span>")
+        filas.append(
+            f"<tr class='{cl_}'><td class='izq'><b>Vivero {v_ % 100:02d}</b><span class='est'>{_h.escape(estado)}</span></td>"
+            f"<td>{millones(g_) if g_ else '—'}<span class='dv'>{anios_g} años con gasto</span></td>"
+            f"<td>{n0(ll)}</td><td>{n0(de)}</td>"
+            + (f"<td><span class='pd {'alta' if pct >= 0.6 else 'media' if pct >= 0.4 else 'baja'}'>{pct:.0%}</span></td>"
+               if pct is not None else "<td class='nd'>—</td>") +
+            f"<td>{n0(en)}</td><td>{n0(ev)}</td><td><b>{n0(pl)}</b></td>"
+            f"<td class='cu'>{val(cpp, pl, 'plantas')}</td><td class='cu'>{val(cpb, ll, 'bolsas')}</td></tr>")
+    rs = pd.DataFrame(resumen)
+    ok = rs[rs["estado"].isin(["ok", "cur"]) & (rs["plantas"] > 0)]
+    cer = rs[(rs["estado"] == "ok") & (rs["plantas"] > 0)]
+    tot = rs[rs["llenadas"] > 0]
+
+    # ---- Tarjetas
+    def tarjeta(t, v, s):
+        return f"<div class='gk'><div class='gk-t'>{t}</div><div class='gk-v'>{v}</div><div class='gk-ac'>{s}</div></div>"
+    tarjetas = (
+        tarjeta("Costo por planta · viveros cerrados", pesos(cer["gasto"].sum() / cer["plantas"].sum()) if len(cer) else "—",
+                f"viveros {', '.join(f'{v_ % 100:02d}' for v_ in cer['vivero'])} · gasto ÷ plantas")
+        + tarjeta("Costo por planta · viveros en curso", pesos(rs[rs['estado'] == 'cur']['gasto'].sum() /
+                                                               rs[rs['estado'] == 'cur']['plantas'].sum())
+                  if (rs["estado"] == "cur").any() else "—", "cambia a medida que se entregan o descartan plantas")
+        + tarjeta("Bolsas descartadas", f"{tot['descartes'].sum() / tot['llenadas'].sum():.0%}" if len(tot) else "—",
+                  f"{n0(tot['descartes'].sum())} de {n0(tot['llenadas'].sum())} bolsas llenadas")
+        + tarjeta("Plantas en vivero hoy", n0(rs["en_vivero"].sum()),
+                  "inventario teórico: llenadas − entregadas − descartes"))
+    st.markdown("""<style>
+      .gks { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:0.7rem; margin:0.1rem 0 0.7rem; }
+      .gk { border:1px solid #E5E7EB; border-left:4px solid #E8743B; border-radius:10px; padding:0.45rem 0.85rem; background:#fff; }
+      .gk-t { font-size:0.72rem; color:#6B7280; font-weight:600; } .gk-v { font-size:1.3rem; font-weight:800; color:#111827; }
+      .gk-ac { font-size:0.72rem; color:#6B7280; }
+      .tviv { overflow-x:auto; border:1px solid #E5E7EB; border-radius:12px; margin-bottom:0.4rem; }
+      .tviv table { width:100%; border-collapse:collapse; font-size:0.84rem; }
+      .tviv th { background:#F3F6F3; color:#374151; font-weight:700; padding:0.45rem 0.55rem; text-align:right;
+                 border-bottom:1px solid #DDE3DD; white-space:nowrap; font-size:0.78rem; }
+      .tviv th.izq, .tviv td.izq { text-align:left; }
+      .tviv td { text-align:right; padding:0.32rem 0.55rem; border-bottom:1px solid #F0F2F0; white-space:nowrap; }
+      .tviv .dv { display:block; font-size:0.66rem; color:#8A949B; font-weight:400; }
+      .tviv .est { display:block; font-size:0.66rem; color:#8A949B; font-weight:400; }
+      .tviv tr.cur .est { color:#B54708; } .tviv tr.inc td { color:#9CA3AF; }
+      .tviv td.cu { font-weight:700; color:#111827; }
+      .tviv tr.tot td { font-weight:800; border-top:2px solid #CBD5CC; background:#F7F9F7; }
+      .tviv .pd { display:inline-block; min-width:3rem; text-align:center; padding:1px 8px; border-radius:999px;
+                  font-weight:700; font-size:0.76rem; }
+      .tviv .pd.alta { background:#FDECEA; color:#B42318; } .tviv .pd.media { background:#FEF6E7; color:#B54708; }
+      .tviv .pd.baja { background:#E7F5EC; color:#067647; } .tviv .nd { color:#9CA3AF; }
+    </style>""" + f"<div class='gks'>{tarjetas}</div>", unsafe_allow_html=True)
+
+    # ---- Tabla principal
+    tl = tot["llenadas"].sum()
+    filas.append(f"<tr class='tot'><td class='izq'>TOTAL</td><td>{millones(rs['gasto'].sum())}</td><td>{n0(tl)}</td>"
+                 f"<td>{n0(tot['descartes'].sum())}</td><td>{(f'{tot.descartes.sum() / tl:.0%}' if tl else '—')}</td>"
+                 f"<td>{n0(rs['entregadas'].sum())}</td><td>{n0(rs['en_vivero'].sum())}</td><td>{n0(rs['plantas'].sum())}</td>"
+                 f"<td></td><td></td></tr>")
+    cab = ("<tr><th class='izq'>Vivero</th><th>Gasto total</th><th>Bolsas llenadas</th><th>Bolsas descartadas</th>"
+           "<th>% descarte</th><th>Plantas entregadas</th><th>En vivero</th><th>Plantas<div class='dv'>entregadas + en vivero</div></th>"
+           "<th>$ por planta</th><th>$ por bolsa llenada</th></tr>")
+    st.markdown(f"<div class='tviv'><table><thead>{cab}</thead><tbody>{''.join(filas)}</tbody></table></div>",
+                unsafe_allow_html=True)
+    st.caption("$ por planta = gasto total del vivero (todos los años) ÷ plantas (entregadas + las que quedan). "
+               "$ por bolsa = gasto ÷ bolsas llenadas. Gasto: contabilidad KAHAI, CECO VIVERO, por ubicación"
+               + (f"; {millones(sin_viv)} no tienen vivero asignado (Vivero V/Cio y otros) y no entran." if sin_viv else ".")
+               + (f" Bolsas y plantas: app de Campo, respaldo del {'/'.join(reversed(fte_v[9:19].split('-')))}."
+                  if fte_v.startswith("respaldo_") else ""))
+
+    # ---- Plantas entregadas por año
+    if not ve.empty:
+        for c_ in ["vivero", "anio", "entregadas", "siembra", "resiembra"]:
+            ve[c_] = pd.to_numeric(ve[c_], errors="coerce")
+        pe = ve.pivot_table(index="vivero", columns="anio", values="entregadas", aggfunc="sum", fill_value=0)
+        pe = pe.loc[[v_ for v_ in pe.index if v_ in set(viveros)]]
+        anios_e = [int(a_) for a_ in pe.columns]
+        tope = pe.values.max() if pe.size else 1
+        fe = []
+        for v_, r_ in pe.iterrows():
+            celdas = ""
+            for a_ in pe.columns:
+                x = r_[a_]
+                sub = ve[(ve["vivero"] == v_) & (ve["anio"] == a_)]
+                tip = (f" title='Siembra {n0(sub.siembra.sum())} · Resiembra {n0(sub.resiembra.sum())}'" if x else "")
+                bg = f" style='background:rgba(27,94,32,{0.06 + 0.32 * x / tope:.2f})'" if x else ""
+                celdas += f"<td{bg}{tip}>{n0(x)}</td>"
+            ev = vv.loc[int(v_), "en_vivero"] if int(v_) in vv.index else 0
+            fe.append(f"<tr><td class='izq'><b>Vivero {int(v_) % 100:02d}</b></td>{celdas}<td><b>{n0(r_.sum())}</b></td>"
+                      f"<td>{n0(ev)}</td></tr>")
+        tot_a = "".join(f"<td>{n0(pe[a_].sum())}</td>" for a_ in pe.columns)
+        fe.append(f"<tr class='tot'><td class='izq'>TOTAL entregado en el año</td>{tot_a}<td>{n0(pe.values.sum())}</td>"
+                  f"<td>{n0(rs['en_vivero'].sum())}</td></tr>")
+        st.markdown("<div style='font-weight:700;margin:0.8rem 0 0.25rem'>🌱 Plantas entregadas por año "
+                    "<span style='font-weight:400;font-size:0.8rem;color:#6B7280'>· cada vivero entrega sus plantas en "
+                    "varios años · pase el mouse para ver siembra y resiembra</span></div>", unsafe_allow_html=True)
+        st.markdown("<div class='tviv'><table><thead><tr><th class='izq'>Vivero</th>"
+                    + "".join(f"<th>{a_}</th>" for a_ in anios_e)
+                    + "<th>Total entregadas</th><th>En vivero hoy</th></tr></thead><tbody>" + "".join(fe)
+                    + "</tbody></table></div>", unsafe_allow_html=True)
+
+    # ---- Gasto por año de cada vivero
+    ga = gasto_anio.loc[[v_ for v_ in gasto_anio.index]]
+    tope_g = ga.values.max() if ga.size else 1
+    fg = []
+    for v_, r_ in ga.iterrows():
+        celdas = "".join((f"<td style='background:rgba(232,116,59,{0.06 + 0.32 * x / tope_g:.2f})'>{x / 1e6:,.1f}</td>"
+                          .replace(",", "X").replace(".", ",").replace("X", ".")) if x > 5e5 else "<td class='nd'>—</td>"
+                         for x in r_)
+        fg.append(f"<tr><td class='izq'><b>Vivero {int(v_) % 100:02d}</b></td>{celdas}<td><b>{millones(r_.sum())}</b></td></tr>")
+    with st.expander("💰 Gasto de cada vivero por año (millones)", expanded=False):
+        st.markdown("<div class='tviv'><table><thead><tr><th class='izq'>Vivero</th>"
+                    + "".join(f"<th>{etq_anio(int(a_))}</th>" for a_ in ga.columns)
+                    + "<th>Total</th></tr></thead><tbody>" + "".join(fg) + "</tbody></table></div>",
+                    unsafe_allow_html=True)
+
+    # ---- En qué se va el costo de cada planta
+    GRUPOS = {"bolsa vivero": "Bolsas y llenado", "sustrato": "Sustrato", "injertación": "Injertación",
+              "germinador": "Germinación y siembra", "siembra": "Germinación y siembra", "riego": "Riego y fertilización",
+              "fertilización": "Riego y fertilización", "miar": "Sanidad (MIAR/MIPYE)", "mipye": "Sanidad (MIAR/MIPYE)",
+              "infraestructura": "Infraestructura", "ma/nto infraestructura": "Infraestructura",
+              "ma/nto_vivero": "Infraestructura", "g_administrativos": "Administración y ventas",
+              "g_ventas": "Administración y ventas", "g_representación": "Administración y ventas"}
+    k["grupo"] = k["rubro"].fillna("").str.strip().str.lower().map(GRUPOS).fillna("Otros")
+    comp = k[k["vivero"].isin(ok["vivero"])].pivot_table(index="vivero", columns="grupo", values="valor",
+                                                         aggfunc="sum", fill_value=0)
+    if not comp.empty:
+        comp = comp.div(ok.set_index("vivero")["plantas"], axis=0).dropna(how="all")
+        orden_g = comp.sum().sort_values(ascending=False).index
+        paleta = ["#1B5E20", "#E8743B", "#4E8F5A", "#F2B134", "#7FB08A", "#B5651D", "#A3C4A8", "#8A949B", "#CBD5CC"]
+        fig = go.Figure()
+        for i_, g_ in enumerate(orden_g):
+            fig.add_bar(name=g_, x=[f"Vivero {int(v_) % 100:02d}" for v_ in comp.index], y=comp[g_],
+                        marker_color=paleta[i_ % len(paleta)],
+                        hovertemplate="%{x} · " + g_ + ": $%{y:,.0f} por planta<extra></extra>")
+        tot_p = comp.sum(axis=1)
+        fig.add_scatter(x=[f"Vivero {int(v_) % 100:02d}" for v_ in comp.index], y=tot_p, mode="text",
+                        text=[pesos(t_) for t_ in tot_p], textposition="top center", showlegend=False,
+                        textfont=dict(size=12, color="#111827"), hoverinfo="skip")
+        fig.update_layout(barmode="stack", height=380, margin=dict(l=10, r=10, t=30, b=10),
+                          legend=dict(orientation="h", y=-0.15), yaxis_title="$ por planta",
+                          yaxis=dict(tickformat=",.0f"), plot_bgcolor="white",
+                          title=dict(text="¿En qué se va el costo de cada planta?", font=dict(size=14)))
+        fig.update_yaxes(gridcolor="#EEF1EE", range=[0, tot_p.max() * 1.15])
+        st.plotly_chart(fig, width="stretch")
+
+
 with pest[2]:
     if vista == "KAHAI":
         # El cambio Costo unitario | Procesamiento va en la misma línea del título
-        kt1, kt2 = st.columns([4.3, 1.7], vertical_alignment="center")
-        vista_k = kt2.segmented_control("Ver", ["📊 Costo unitario", "🏭 Procesamiento"], default="📊 Costo unitario",
-                                        key="kahai_cu_vista", label_visibility="collapsed") or "📊 Costo unitario"
+        kt1, kt2 = st.columns([3.6, 2.4], vertical_alignment="center")
+        vista_k = kt2.segmented_control("Ver", ["📊 Costo unitario", "🏭 Procesamiento", "🌱 Vivero"],
+                                        default="📊 Costo unitario", key="kahai_cu_vista",
+                                        label_visibility="collapsed") or "📊 Costo unitario"
         if vista_k.startswith("📊"):
             mostrar_cu_kahai(kt1)
+        elif vista_k.startswith("🌱"):
+            mostrar_vivero_kahai(kt1)
         else:
             mostrar_procesamiento_kahai(kt1)
     else:
