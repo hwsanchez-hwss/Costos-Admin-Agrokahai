@@ -30,6 +30,13 @@ import config as C
 
 LOTE = re.compile(r"^(ML|L)\d+$|^HMPG$", re.I)
 
+# Registros de insumos con el lote mal cargado (confirmado por Wal, 27/11/2026): en vez de su lote, se reparten
+# entre los lotes que tuvieron jornales de esa misma actividad ese mismo día, en proporción a sus árboles (censo).
+#  - Fertilizante 21,1-13,3-16 del 26 al 28/07/2022: 8 salidas (6.382 kg) cargadas todas a ML4 (INSUMOS_AGRO.xlsx,
+#    hoja DIARIO, filas 1892-1895, 1904-1906 y 1914). A 50-60 g/árbol, ML4 necesitaba ~240 kg; los jornales de esos
+#    días muestran la fertilización en ML15, ML16, ML17, ML5, ML1, ML2, ML3, ML4, L1, L2 y L3.
+REASIGNAR_POR_JORNALES = {1891, 1892, 1893, 1894, 1903, 1904, 1905, 1913}
+
 # rubro contable -> (grupos de insumos de la app de Campo, rubros de mano de obra de la app de Campo)
 RUBROS = {
     "nutrición_vegetal": (["Fertilizante", "BIOL", "Microorganismos"], ["Fertilización", "Enmienda"]),
@@ -55,10 +62,12 @@ def leer_campo(carpeta=None):
         return None, None, ""
     with zipfile.ZipFile(zips[-1]) as z:
         ins = _leer_csv_respaldo(z, "principal/csv/insumos_diario.csv")
+        jor = _leer_csv_respaldo(z, "principal/csv/registros_diarios.csv")
         cat = _leer_csv_respaldo(z, "principal/csv/cat_act_ubic.csv")
         prod = _leer_csv_respaldo(z, "principal/csv/productos_insumos.csv")
         mo = _leer_csv_respaldo(z, "principal/csv/costos_actividad_mes.csv")
-    cat = cat.drop_duplicates("cod_act_ubic")[["cod_act_ubic", "ubicacion", "empresa"]]
+    cat_act = cat.drop_duplicates("cod_act_ubic")[["cod_act_ubic", "actividad", "ubicacion"]]
+    cat = cat.drop_duplicates("cod_act_ubic")[["cod_act_ubic", "actividad", "ubicacion", "empresa"]]
     ins = ins.merge(cat, on="cod_act_ubic", how="left").merge(prod[["codigo_producto", "grupo"]],
                                                               on="codigo_producto", how="left")
     ins["anio"] = pd.to_datetime(ins["fecha"], errors="coerce").dt.year
@@ -68,6 +77,12 @@ def leer_campo(carpeta=None):
     mo["lote"] = mo["ubicacion"].astype(str).str.strip().str.upper()
     mo["valor"] = pd.to_numeric(mo["valor_total_actividad"], errors="coerce")
     mo = mo[(mo["empresa"] == "AGROCACAY") & mo["lote"].str.match(LOTE) & (mo["valor"] > 0)]
+    # jornales: qué lotes tuvieron cada actividad cada día (para corregir insumos con el lote mal cargado)
+    jor = jor[["fecha", "cod_act_ubic"]].merge(cat_act, on="cod_act_ubic", how="left")
+    jor["dia"] = pd.to_datetime(jor["fecha"], errors="coerce").dt.normalize()
+    jor["lote"] = jor["ubicacion"].astype(str).str.strip().str.upper()
+    jor = jor[jor["lote"].str.match(LOTE)][["dia", "actividad", "lote"]].drop_duplicates()
+    ins.attrs["jornales"] = jor
     return ins, mo, os.path.basename(zips[-1])
 
 
@@ -79,6 +94,36 @@ def censo_lote(ref_censo, anio, lote):
         return v
     previos = sorted(a for (a, l_) in ref_censo if l_ == k and a < anio and ref_censo[(a, l_)])
     return ref_censo[(previos[-1], k)] if previos else 0
+
+
+def corregir_lotes(ins, ref_censo):
+    """Registros de REASIGNAR_POR_JORNALES: su cantidad se reparte entre los lotes con jornales de la misma actividad
+    ese mismo día, en proporción a sus árboles. Devuelve los insumos corregidos y un resumen de lo que se movió."""
+    jor = ins.attrs.get("jornales")
+    if jor is None or "insumo_id" not in ins:
+        return ins, []
+    malos = ins[ins["insumo_id"].isin(REASIGNAR_POR_JORNALES)]
+    nuevos, resumen, movidos = [], [], []
+    for _, r in malos.iterrows():
+        dia = pd.to_datetime(r["fecha"], errors="coerce").normalize()
+        lotes = jor[(jor["dia"] == dia) & (jor["actividad"] == r["actividad"])]["lote"].unique().tolist()
+        arb = {l_: censo_lote(ref_censo, int(r["anio"]), l_) for l_ in lotes}
+        arb = {l_: v for l_, v in arb.items() if v > 0}
+        if not arb:
+            continue                       # sin jornales ese día: se deja como estaba
+        tot = sum(arb.values())
+        movidos.append(r.name)
+        for l_, v in arb.items():
+            n = r.copy()
+            n["lote"], n["cant"] = l_, r["cant"] * v / tot
+            nuevos.append(n)
+        kg_txt = f"{r['cant']:,.0f}".replace(",", ".")
+        resumen.append(f"{dia:%d/%m/%Y} {kg_txt} kg de {r['lote']} → {', '.join(sorted(arb))}")
+    if not nuevos:
+        return ins, resumen
+    corregidos = pd.concat([ins.drop(index=movidos), pd.DataFrame(nuevos)], ignore_index=True)
+    corregidos.attrs = ins.attrs
+    return corregidos, resumen
 
 
 def calcular(ins, mo, ref_censo, fuente):
@@ -110,6 +155,9 @@ def correr(ref=None):
     if ref is None:
         from motor_costo_unitario import leer_referencias
         ref = leer_referencias()
+    ins, movidos = corregir_lotes(ins, ref["censo"])
+    for m_ in movidos:
+        print(f"  Corrección de lote (insumo mal cargado): {m_}")
     h = calcular(ins, mo, ref["censo"], fuente)
     con = sqlite3.connect(C.BASE_LOCAL)
     h.to_sql("agrocacay_huella_campo", con, if_exists="replace", index=False)
