@@ -539,6 +539,8 @@ def tabla_comparativa(d, llaves, orden=None, subtotales=None):
                          for nombre, lista in COLUMNAS], axis=1).fillna(0)
     if orden is not None:
         valores = valores.reindex([o for o in orden if o in valores.index])
+    else:   # sin un orden fijo: lo que más cuesta arriba (periodo elegido; empates por las demás columnas)
+        valores = valores.sort_values(list(valores.columns), ascending=False)
     filas = []
     for idx, fila in valores.iterrows():
         filas.append((idx, fila))
@@ -2820,8 +2822,12 @@ with pest[3]:
         sub_g = tg.groupby(level="gerente").sum()
         sub_g.index = pd.MultiIndex.from_tuples([(ger_, "TOTAL " + ger_.upper(), "") for ger_ in sub_g.index],
                                                 names=tg.index.names)
-        tg = pd.concat([tg, sub_g]).sort_index(level=0, sort_remaining=False)
-        orden_ = [(i_[0], i_[1].startswith("TOTAL ")) for i_ in tg.index]
+        tg = pd.concat([tg, sub_g])
+        # lo que más cuesta arriba: gerentes de mayor a menor y, dentro de cada uno, rubros de mayor a menor;
+        # el TOTAL de cada gerente va al final de su bloque
+        rango_ger = {g_: -v_ for g_, v_ in sub_g[nom_total].groupby(level="gerente").sum().items()}
+        orden_ = [(rango_ger.get(i_[0], 0), i_[0], i_[1].startswith("TOTAL "), -tg[nom_total].iloc[j_])
+                  for j_, i_ in enumerate(tg.index)]
         tg = tg.iloc[sorted(range(len(tg)), key=lambda j_: orden_[j_])]
         tg = tg.reset_index().rename(columns={"gerente": "Gerente", "ceco": "CECO", "rubro": "Rubro"})
         estilo_g = tg.style.format(pesos, subset=[c for c in tg.columns if c not in ("Gerente", "CECO", "Rubro")])
@@ -2849,7 +2855,7 @@ with pest[4]:
         resumen.columns = [f"Compra {e}" for e in resumen.columns]
         st.dataframe(resumen.reset_index().style.format(pesos, subset=list(resumen.columns)),
                      hide_index=True)
-        lista = ic.sort_values("periodo", ascending=False)[
+        lista = ic.sort_values("valor", ascending=False)[
             ["empresa", "periodo", "fecha", "ceco", "rubro", "detalle", "tercero", "actividad", "documento", "valor"]]
         lista["periodo"] = lista["periodo"].map(etiqueta)
         st.dataframe(lista.rename(columns=str.capitalize).style.format(pesos, subset=["Valor"]),
